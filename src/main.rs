@@ -7,10 +7,13 @@ mod keys;
 mod macos;
 mod scroll;
 mod settings;
+mod version;
+mod paths;
 
 use std::path::PathBuf;
 use std::process::ExitCode;
 
+use paths::BUNDLE_ID;
 use config::Config;
 
 const USAGE: &str = "\
@@ -22,11 +25,10 @@ USAGE:
     mfx check [--config PATH]             validate config and report Accessibility access
     mfx default-config                    print the default config
     mfx launch-agent                      print a LaunchAgent plist that starts mfx at login
+    mfx --version                         print the version
 
 Config: $XDG_CONFIG_HOME/mfx/config.toml or ~/.config/mfx/config.toml (defaults if missing).
 ";
-
-const LABEL: &str = "com.jeffujioka.mfx";
 
 struct Args {
     command: String,
@@ -44,6 +46,7 @@ fn parse_args() -> Result<Args, String> {
                 args.config = Some(it.next().ok_or("--config needs a path")?.into());
             }
             "--debug" | "-d" => args.debug = true,
+            "-V" | "--version" => args.command = "version".into(),
             "-h" | "--help" => args.command = "help".into(),
             cmd if !command_seen && !cmd.starts_with('-') => {
                 args.command = cmd.into();
@@ -79,7 +82,7 @@ fn launch_agent_plist() -> Result<String, String> {
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>{LABEL}</string>
+    <string>{BUNDLE_ID}</string>
     <key>ProgramArguments</key>
     <array>
         <string>{exe}</string>
@@ -124,6 +127,10 @@ fn main() -> ExitCode {
 
 fn real_main(args: Args) -> Result<(), String> {
     match args.command.as_str() {
+        "version" => {
+            println!("mfx {}", version::CURRENT);
+            Ok(())
+        }
         "help" => {
             print!("{USAGE}");
             Ok(())

@@ -16,6 +16,7 @@ use winit::window::WindowId;
 
 use super::tap;
 use crate::config::{Config, DEFAULT_TOML};
+use crate::version;
 
 const ACCESSIBILITY_PANE: &str = "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility";
 
@@ -26,6 +27,7 @@ enum UserEvent {
 }
 
 struct Items {
+    version: MenuItem,
     status: MenuItem,
     enabled: CheckMenuItem,
     accessibility: MenuItem,
@@ -196,6 +198,7 @@ impl App {
 
     fn build_tray(&mut self) {
         let items = Items {
+            version: MenuItem::new(format!("mfx {}", version::CURRENT), false, None),
             status: MenuItem::new("mfx", false, None),
             enabled: CheckMenuItem::new("Enabled", true, true, None),
             accessibility: MenuItem::new("Grant Accessibility Access…", true, None),
@@ -206,6 +209,7 @@ impl App {
         };
         let menu = Menu::new();
         let built = menu.append_items(&[
+            &items.version,
             &items.status,
             &items.enabled,
             &items.accessibility,

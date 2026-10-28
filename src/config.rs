@@ -17,6 +17,8 @@ pub struct Config {
     pub drag: DragConfig,
     /// Keyed by CoreGraphics button number (0 = left, 1 = right, 2 = middle, ...).
     pub buttons: BTreeMap<u32, ButtonBinding>,
+    /// Check GitHub for a newer Release once a day (never installs by itself).
+    pub check_updates: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -109,6 +111,20 @@ pub struct ConfigFile {
     /// Keyed by user button number as a string ("3" = middle).
     #[serde(default)]
     pub buttons: BTreeMap<String, ButtonFile>,
+    #[serde(default)]
+    pub updates: UpdatesFile,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, default)]
+pub struct UpdatesFile {
+    pub check_automatically: bool,
+}
+
+impl Default for UpdatesFile {
+    fn default() -> Self {
+        Self { check_automatically: false }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -322,7 +338,8 @@ impl Config {
             buttons.insert(human - 1, ButtonBinding { click, drag });
         }
 
-        Ok(Config { scroll, drag, buttons })
+        let check_updates = raw.updates.check_automatically;
+        Ok(Config { scroll, drag, buttons, check_updates })
     }
 
     pub fn load(path: &Path) -> Result<Config, ConfigError> {
@@ -398,6 +415,22 @@ mod tests {
         let DragMode::Gestures(g) = &b.drag else { panic!("expected gestures") };
         assert_eq!(g.up, named_action("mission-control").unwrap());
         assert_eq!(g.down, Action::None);
+    }
+
+    #[test]
+    fn updates_default_off() {
+        assert!(!Config::default().check_updates);
+        assert!(!Config::parse("").unwrap().check_updates);
+    }
+
+    #[test]
+    fn updates_can_be_enabled() {
+        assert!(Config::parse("[updates]\ncheck_automatically = true").unwrap().check_updates);
+    }
+
+    #[test]
+    fn config_from_0_1_0_still_parses() {
+        Config::parse(include_str!("fixtures/config-0.1.0.toml")).unwrap();
     }
 
     #[test]

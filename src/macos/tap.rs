@@ -80,10 +80,7 @@ pub fn run(cfg: Config, debug: bool) -> Result<(), String> {
         );
         if port.is_null() {
             drop(Box::from_raw(state));
-            return Err("could not create the event tap. Grant Accessibility access (System Settings → \
-                        Privacy & Security → Accessibility) to this binary or the terminal running it, \
-                        then restart mfx."
-                .into());
+            return Err("could not create the event tap: Accessibility access is missing".into());
         }
         (*state).port = port;
 

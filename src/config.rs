@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::path::{Path, PathBuf};
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::keys::Shortcut;
 
@@ -94,33 +94,37 @@ fn err<T>(msg: impl Into<String>) -> Result<T, ConfigError> {
     Err(ConfigError(msg.into()))
 }
 
-// ---- raw serde layer -------------------------------------------------------
+// ---- file model ------------------------------------------------------------
+//
+// Mirrors the TOML 1:1 so the settings window can edit and save it; `Config`
+// is the validated form the engine uses.
 
-#[derive(Deserialize)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct RawConfig {
+pub struct ConfigFile {
     #[serde(default)]
-    scroll: RawScroll,
+    pub scroll: ScrollFile,
     #[serde(default)]
-    drag: RawDrag,
+    pub drag: DragFile,
+    /// Keyed by user button number as a string ("3" = middle).
     #[serde(default)]
-    buttons: BTreeMap<String, RawButton>,
+    pub buttons: BTreeMap<String, ButtonFile>,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, default)]
-struct RawScroll {
-    smooth: bool,
-    invert: bool,
-    step_px: f64,
-    duration_ms: f64,
-    acceleration: bool,
-    accel_window_ms: f64,
-    accel_per_notch: f64,
-    accel_max: f64,
+pub struct ScrollFile {
+    pub smooth: bool,
+    pub invert: bool,
+    pub step_px: f64,
+    pub duration_ms: f64,
+    pub acceleration: bool,
+    pub accel_window_ms: f64,
+    pub accel_per_notch: f64,
+    pub accel_max: f64,
 }
 
-impl Default for RawScroll {
+impl Default for ScrollFile {
     fn default() -> Self {
         Self {
             smooth: true,
@@ -135,80 +139,94 @@ impl Default for RawScroll {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, default)]
-struct RawDrag {
-    click_slop_px: f64,
-    gesture_threshold_px: f64,
-    scroll_speed: f64,
-    scroll_invert: bool,
+pub struct DragFile {
+    pub click_slop_px: f64,
+    pub gesture_threshold_px: f64,
+    pub scroll_speed: f64,
+    pub scroll_invert: bool,
 }
 
-impl Default for RawDrag {
+impl Default for DragFile {
     fn default() -> Self {
         Self { click_slop_px: 4.0, gesture_threshold_px: 40.0, scroll_speed: 1.0, scroll_invert: false }
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct RawButton {
-    #[serde(default)]
-    click: Option<RawAction>,
-    #[serde(default)]
-    drag: Option<String>,
-    #[serde(default)]
-    gestures: Option<RawGestures>,
+pub struct ButtonFile {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub click: Option<ActionFile>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub drag: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gestures: Option<GesturesFile>,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct RawGestures {
-    up: Option<RawAction>,
-    down: Option<RawAction>,
-    left: Option<RawAction>,
-    right: Option<RawAction>,
+pub struct GesturesFile {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub up: Option<ActionFile>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub down: Option<ActionFile>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub left: Option<ActionFile>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub right: Option<ActionFile>,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
-enum RawAction {
+pub enum ActionFile {
     Named(String),
     Shortcut { shortcut: String },
 }
 
+/// Drag modes as written in the file.
+pub const DRAG_MODES: [&str; 3] = ["none", "scroll", "gestures"];
+
+/// Named actions: (file name, label, key combo or `None` for the special ones).
+/// Combos are the macOS default keyboard shortcuts (System Settings → Keyboard →
+/// Keyboard Shortcuts); they only work while those shortcuts are enabled.
+pub const NAMED_ACTIONS: [(&str, &str, Option<&str>); 9] = [
+    ("none", "Nothing", None),
+    ("passthrough", "Normal click", None),
+    ("back", "Back", Some("cmd+[")),
+    ("forward", "Forward", Some("cmd+]")),
+    ("mission-control", "Mission Control", Some("ctrl+up")),
+    ("app-expose", "App Exposé", Some("ctrl+down")),
+    ("space-left", "Space left", Some("ctrl+left")),
+    ("space-right", "Space right", Some("ctrl+right")),
+    ("show-desktop", "Show Desktop", Some("f11")),
+];
+
 // ---- conversion ------------------------------------------------------------
 
-fn parse_action(raw: Option<RawAction>, default: Action, ctx: &str) -> Result<Action, ConfigError> {
+fn parse_action(raw: Option<&ActionFile>, default: Action, ctx: &str) -> Result<Action, ConfigError> {
     let Some(raw) = raw else { return Ok(default) };
     let parsed = match raw {
-        RawAction::Shortcut { shortcut } => Shortcut::parse(&shortcut).map(Action::Shortcut),
-        RawAction::Named(name) => named_action(&name),
+        ActionFile::Shortcut { shortcut } => Shortcut::parse(shortcut).map(Action::Shortcut),
+        ActionFile::Named(name) => named_action(name),
     };
     parsed.map_err(|e| ConfigError(format!("{ctx}: {e}")))
 }
 
-/// Named actions map to macOS default keyboard shortcuts (System Settings →
-/// Keyboard → Keyboard Shortcuts). They only work while those shortcuts are enabled.
 fn named_action(name: &str) -> Result<Action, String> {
-    let combo = match name {
-        "none" => return Ok(Action::None),
-        "passthrough" => return Ok(Action::Passthrough),
-        "back" => "cmd+[",
-        "forward" => "cmd+]",
-        "mission-control" => "ctrl+up",
-        "app-expose" => "ctrl+down",
-        "space-left" => "ctrl+left",
-        "space-right" => "ctrl+right",
-        "show-desktop" => "f11",
-        other => {
-            return Err(format!(
-                "unknown action {other:?} (expected none, passthrough, back, forward, mission-control, \
-                 app-expose, space-left, space-right, show-desktop, or {{ shortcut = \"...\" }})"
+    match NAMED_ACTIONS.iter().find(|(n, _, _)| *n == name) {
+        Some((_, _, Some(combo))) => Shortcut::parse(combo).map(Action::Shortcut),
+        Some(("passthrough", _, None)) => Ok(Action::Passthrough),
+        Some(_) => Ok(Action::None),
+        None => {
+            let names: Vec<_> = NAMED_ACTIONS.iter().map(|(n, _, _)| *n).collect();
+            Err(format!(
+                "unknown action {name:?} (expected {}, or {{ shortcut = \"...\" }})",
+                names.join(", ")
             ))
         }
-    };
-    Shortcut::parse(combo).map(Action::Shortcut)
+    }
 }
 
 fn positive(v: f64, name: &str) -> Result<f64, ConfigError> {
@@ -219,11 +237,29 @@ fn positive(v: f64, name: &str) -> Result<f64, ConfigError> {
     }
 }
 
+/// Highest button number that can be bound (user numbering, 3 = middle).
+pub const MAX_BUTTON: u32 = 32;
+
+impl ConfigFile {
+    pub fn parse(text: &str) -> Result<ConfigFile, ConfigError> {
+        toml::from_str(text).map_err(|e| ConfigError(e.to_string()))
+    }
+
+    /// TOML as the settings window saves it (comments of a hand-edited file are not kept).
+    pub fn to_toml(&self) -> String {
+        let body = toml::to_string_pretty(self).expect("config file model always serializes");
+        format!("# Written by `mfx settings`. Options: `mfx default-config`.\n\n{body}")
+    }
+}
+
 impl Config {
     pub fn parse(text: &str) -> Result<Config, ConfigError> {
-        let raw: RawConfig = toml::from_str(text).map_err(|e| ConfigError(e.to_string()))?;
+        Config::from_file(&ConfigFile::parse(text)?)
+    }
 
-        let s = raw.scroll;
+    /// Validates the file model.
+    pub fn from_file(raw: &ConfigFile) -> Result<Config, ConfigError> {
+        let s = &raw.scroll;
         let scroll = ScrollConfig {
             smooth: s.smooth,
             invert: s.invert,
@@ -239,7 +275,7 @@ impl Config {
             },
         };
 
-        let d = raw.drag;
+        let d = &raw.drag;
         let drag = DragConfig {
             click_slop_px: positive(d.click_slop_px, "drag.click_slop_px")?,
             gesture_threshold_px: positive(d.gesture_threshold_px, "drag.gesture_threshold_px")?,
@@ -251,28 +287,28 @@ impl Config {
         }
 
         let mut buttons = BTreeMap::new();
-        for (key, rb) in raw.buttons {
+        for (key, rb) in &raw.buttons {
             // Users count buttons from 1 like Mac Mouse Fix (3 = middle); CoreGraphics from 0.
             let human: u32 = key
                 .parse()
                 .map_err(|_| ConfigError(format!("buttons.{key}: button must be a number")))?;
-            if !(3..=32).contains(&human) {
+            if !(3..=MAX_BUTTON).contains(&human) {
                 return err(format!(
-                    "buttons.{key}: only buttons 3..=32 can be remapped (1 and 2 are left/right click)"
+                    "buttons.{key}: only buttons 3..={MAX_BUTTON} can be remapped (1 and 2 are left/right click)"
                 ));
             }
             let ctx = format!("buttons.{key}");
-            let click = parse_action(rb.click, Action::Passthrough, &format!("{ctx}.click"))?;
-            let drag = match (rb.drag.as_deref().unwrap_or("none"), rb.gestures) {
+            let click = parse_action(rb.click.as_ref(), Action::Passthrough, &format!("{ctx}.click"))?;
+            let drag = match (rb.drag.as_deref().unwrap_or("none"), &rb.gestures) {
                 ("none", None) => DragMode::None,
                 ("scroll", None) => DragMode::Scroll,
                 ("gestures", Some(g)) => {
                     let gctx = format!("{ctx}.gestures");
                     DragMode::Gestures(Gestures {
-                        up: parse_action(g.up, Action::None, &format!("{gctx}.up"))?,
-                        down: parse_action(g.down, Action::None, &format!("{gctx}.down"))?,
-                        left: parse_action(g.left, Action::None, &format!("{gctx}.left"))?,
-                        right: parse_action(g.right, Action::None, &format!("{gctx}.right"))?,
+                        up: parse_action(g.up.as_ref(), Action::None, &format!("{gctx}.up"))?,
+                        down: parse_action(g.down.as_ref(), Action::None, &format!("{gctx}.down"))?,
+                        left: parse_action(g.left.as_ref(), Action::None, &format!("{gctx}.left"))?,
+                        right: parse_action(g.right.as_ref(), Action::None, &format!("{gctx}.right"))?,
                     })
                 }
                 ("gestures", None) => return err(format!("{ctx}: drag = \"gestures\" needs a [{ctx}.gestures] table")),
@@ -321,6 +357,21 @@ mod tests {
         assert_eq!(cfg.buttons.keys().copied().collect::<Vec<_>>(), vec![2, 3, 4]);
         assert_eq!(cfg.buttons[&2].drag, DragMode::Scroll);
         assert_eq!(cfg.buttons[&3].click, named_action("back").unwrap());
+    }
+
+    #[test]
+    fn saved_file_reloads_to_the_same_config() {
+        let mut file = ConfigFile::parse(DEFAULT_TOML).unwrap();
+        file.buttons.insert(
+            "7".into(),
+            ButtonFile {
+                click: Some(ActionFile::Shortcut { shortcut: "cmd+shift+4".into() }),
+                ..Default::default()
+            },
+        );
+        let text = file.to_toml();
+        assert_eq!(ConfigFile::parse(&text).unwrap(), file);
+        assert_eq!(Config::parse(&text).unwrap(), Config::from_file(&file).unwrap());
     }
 
     #[test]

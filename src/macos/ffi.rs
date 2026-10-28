@@ -131,10 +131,9 @@ extern "C" {
         port: CFMachPortRef,
         order: isize,
     ) -> CFRunLoopSourceRef;
-    pub fn CFRunLoopGetCurrent() -> CFRunLoopRef;
+    pub fn CFRunLoopGetMain() -> CFRunLoopRef;
     pub fn CFRunLoopAddSource(rl: CFRunLoopRef, source: CFRunLoopSourceRef, mode: CFStringRef);
     pub fn CFRunLoopAddTimer(rl: CFRunLoopRef, timer: CFRunLoopTimerRef, mode: CFStringRef);
-    pub fn CFRunLoopRun();
     pub fn CFAbsoluteTimeGetCurrent() -> CFAbsoluteTime;
     pub fn CFRunLoopTimerCreate(
         allocator: CFAllocatorRef,

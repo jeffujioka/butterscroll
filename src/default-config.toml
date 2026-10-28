@@ -1,5 +1,5 @@
 # mfx configuration. Location: ~/.config/mfx/config.toml (or $XDG_CONFIG_HOME/mfx/config.toml).
-# Restart mfx after editing.
+# mfx reloads this file automatically when it changes.
 #
 # Actions: "none", "passthrough" (original click), "back", "forward", "mission-control",
 # "app-expose", "space-left", "space-right", "show-desktop", or { shortcut = "cmd+shift+4" }.

@@ -1,9 +1,10 @@
+//! CGEventTap wiring: translate CoreGraphics events into engine inputs and
+//! engine effects into posted events. Everything here runs on the main thread.
+
 // CoreGraphics constants keep their C names, including in match patterns.
 #![allow(non_upper_case_globals)]
 
-//! CGEventTap wiring: translate CoreGraphics events into engine inputs and
-//! engine effects into posted events.
-
+use std::cell::RefCell;
 use std::ffi::c_void;
 use std::ptr;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -25,9 +26,20 @@ static CURSOR_FROZEN: AtomicBool = AtomicBool::new(false);
 
 struct Tap {
     engine: Engine,
+    cfg: Config,
     port: CFMachPortRef,
     timer: CFRunLoopTimerRef,
+    enabled: bool,
     debug: bool,
+}
+
+thread_local! {
+    static TAP: RefCell<Option<Tap>> = const { RefCell::new(None) };
+}
+
+/// Runs `f` on the installed tap; `None` if not installed or already borrowed.
+fn with_tap<R>(f: impl FnOnce(&mut Tap) -> R) -> Option<R> {
+    TAP.with(|cell| cell.try_borrow_mut().ok()?.as_mut().map(f))
 }
 
 /// Whether this process may observe and post input events. With `prompt`, macOS
@@ -53,21 +65,14 @@ pub fn accessibility_trusted(prompt: bool) -> bool {
     }
 }
 
-/// Installs the tap and runs the current run loop forever.
-pub fn run(cfg: Config, debug: bool) -> Result<(), String> {
+/// Installs the tap and animation timer on the main run loop. Events flow once
+/// the caller runs that loop (the menu-bar app does).
+pub fn install(cfg: Config, debug: bool) -> Result<(), String> {
     install_signal_handlers();
 
     let mask = [kCGEventOtherMouseDown, kCGEventOtherMouseUp, kCGEventOtherMouseDragged, kCGEventScrollWheel]
         .into_iter()
         .fold(0, |m, t| m | event_mask_bit(t));
-
-    // Leaked on purpose: the tap lives until the process exits.
-    let state = Box::into_raw(Box::new(Tap {
-        engine: Engine::new(cfg),
-        port: ptr::null_mut(),
-        timer: ptr::null_mut(),
-        debug,
-    }));
 
     unsafe {
         let port = CGEventTapCreate(
@@ -76,45 +81,65 @@ pub fn run(cfg: Config, debug: bool) -> Result<(), String> {
             kCGEventTapOptionDefault,
             mask,
             tap_callback,
-            state.cast(),
+            ptr::null_mut(),
         );
         if port.is_null() {
-            drop(Box::from_raw(state));
             return Err("could not create the event tap: Accessibility access is missing".into());
         }
-        (*state).port = port;
-
-        let run_loop = CFRunLoopGetCurrent();
+        let run_loop = CFRunLoopGetMain();
         let source = CFMachPortCreateRunLoopSource(ptr::null(), port, 0);
         CFRunLoopAddSource(run_loop, source, kCFRunLoopCommonModes);
 
         let mut ctx = CFRunLoopTimerContext {
             version: 0,
-            info: state.cast(),
+            info: ptr::null_mut(),
             retain: ptr::null(),
             release: ptr::null(),
             copy_description: ptr::null(),
         };
         let timer = CFRunLoopTimerCreate(ptr::null(), PARKED, FRAME.as_secs_f64(), 0, 0, timer_callback, &mut ctx);
         CFRunLoopAddTimer(run_loop, timer, kCFRunLoopCommonModes);
-        (*state).timer = timer;
 
+        TAP.with(|cell| {
+            *cell.borrow_mut() =
+                Some(Tap { engine: Engine::new(cfg.clone()), cfg, port, timer, enabled: true, debug })
+        });
         CGEventTapEnable(port, true);
-        eprintln!("mfx: running (Ctrl+C to stop)");
-        CFRunLoopRun();
     }
     Ok(())
 }
 
-extern "C" fn tap_callback(_proxy: *mut c_void, ty: CGEventType, event: CGEventRef, info: *mut c_void) -> CGEventRef {
+/// Swaps in a new config; any drag or scroll in progress is dropped.
+pub fn reload(cfg: Config) {
+    with_tap(|tap| {
+        tap.engine = Engine::new(cfg.clone());
+        tap.cfg = cfg;
+    });
+    set_cursor_frozen(false);
+}
+
+/// Pauses or resumes all interception.
+pub fn set_enabled(enabled: bool) {
+    with_tap(|tap| {
+        tap.enabled = enabled;
+        tap.engine = Engine::new(tap.cfg.clone());
+        unsafe { CGEventTapEnable(tap.port, enabled) };
+    });
+    set_cursor_frozen(false);
+}
+
+extern "C" fn tap_callback(_proxy: *mut c_void, ty: CGEventType, event: CGEventRef, _info: *mut c_void) -> CGEventRef {
     // A panic must not unwind into CoreGraphics; on failure the event passes unchanged.
-    std::panic::catch_unwind(|| unsafe { handle_event(&mut *(info as *mut Tap), ty, event) }).unwrap_or(event)
+    std::panic::catch_unwind(|| with_tap(|tap| unsafe { handle_event(tap, ty, event) }).unwrap_or(event))
+        .unwrap_or(event)
 }
 
 unsafe fn handle_event(tap: &mut Tap, ty: CGEventType, event: CGEventRef) -> CGEventRef {
     if ty == kCGEventTapDisabledByTimeout || ty == kCGEventTapDisabledByUserInput {
-        eprintln!("mfx: event tap was disabled by macOS (type {ty:#x}); re-enabling");
-        CGEventTapEnable(tap.port, true);
+        if tap.enabled {
+            eprintln!("mfx: event tap was disabled by macOS (type {ty:#x}); re-enabling");
+            CGEventTapEnable(tap.port, true);
+        }
         return event;
     }
     if CGEventGetIntegerValueField(event, kCGEventSourceUserData) == MFX_TAG {
@@ -163,15 +188,16 @@ unsafe fn handle_event(tap: &mut Tap, ty: CGEventType, event: CGEventRef) -> CGE
     }
 }
 
-extern "C" fn timer_callback(timer: CFRunLoopTimerRef, info: *mut c_void) {
-    let _ = std::panic::catch_unwind(|| unsafe {
-        let tap = &mut *(info as *mut Tap);
-        if let Some(effect) = tap.engine.frame(Instant::now()) {
-            post(&effect);
-        }
-        if !tap.engine.is_animating() {
-            CFRunLoopTimerSetNextFireDate(timer, PARKED);
-        }
+extern "C" fn timer_callback(timer: CFRunLoopTimerRef, _info: *mut c_void) {
+    let _ = std::panic::catch_unwind(|| {
+        with_tap(|tap| unsafe {
+            if let Some(effect) = tap.engine.frame(Instant::now()) {
+                post(&effect);
+            }
+            if !tap.engine.is_animating() {
+                CFRunLoopTimerSetNextFireDate(timer, PARKED);
+            }
+        })
     });
 }
 

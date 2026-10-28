@@ -12,6 +12,7 @@ serde = { version = "1", features = ["derive"] }
 toml = "0.8"
 tray-icon = "0.26"
 winit = { version = "0.30", default-features = false, features = ["rwh_06"] }
+libc = "0.2"
 
 [profile.release]
 lto = true

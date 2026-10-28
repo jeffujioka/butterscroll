@@ -34,6 +34,17 @@ const SLIDER_WIDTH: f32 = 150.0;
 const VALUE_WIDTH: f32 = 64.0;
 
 pub fn run(path: PathBuf) -> Result<(), String> {
+    // Held while the window is open: a second `mfx settings` does nothing.
+    #[cfg(target_os = "macos")]
+    let _instance = match crate::paths::settings_lock().map(|p| crate::macos::instance::try_acquire(&p)) {
+        Some(Ok(Some(lock))) => Some(lock),
+        Some(Ok(None)) => return Ok(()),
+        Some(Err(e)) => {
+            eprintln!("mfx: single-instance lock: {e}");
+            None
+        }
+        None => None,
+    };
     let (file, notice) = match std::fs::read_to_string(&path) {
         Ok(text) => match ConfigFile::parse(&text) {
             Ok(file) => (file, None),

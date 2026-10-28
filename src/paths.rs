@@ -18,9 +18,9 @@ pub fn old_log_file() -> Option<PathBuf> {
     under_home(std::env::var_os("HOME").as_deref(), "Library/Logs/mfx.old.log")
 }
 
-/// `$HOME/Library/Application Support/mfx/main.lock`: held by the running menu-bar app.
+/// `$HOME/Library/Application Support/mfx/mfx.lock`: held by the running menu-bar app.
 pub fn main_lock() -> Option<PathBuf> {
-    app_support_dir().map(|d| d.join("main.lock"))
+    app_support_dir().map(|d| d.join("mfx.lock"))
 }
 
 /// `$HOME/Library/Application Support/mfx/settings.lock`: held by an open settings window.

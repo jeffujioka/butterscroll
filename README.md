@@ -32,11 +32,20 @@ MFX_SIGN_ID="mfx local" ./scripts/build.sh
 ## Run
 
 ```sh
+target/release/mfx           # menu-bar app (add --debug to log every handled event)
 target/release/mfx check     # validates the config and reports Accessibility access
-target/release/mfx --debug   # runs in the foreground and logs every handled event
 ```
 
-The first run asks for **Accessibility** access (System Settings → Privacy & Security →
+mfx runs as a menu-bar icon (a mouse) with no Dock icon. The menu has:
+
+- **Enabled**: pause or resume all remapping and scrolling.
+- **Settings…**: opens the settings window.
+- **Open Config File** / **Reload Config**.
+- **Grant Accessibility Access…**: shown while the permission is missing. mfx keeps
+  retrying, so it starts working as soon as you grant access.
+- **Quit mfx**.
+
+mfx needs **Accessibility** access (System Settings → Privacy & Security →
 Accessibility). When you run mfx from a terminal, macOS gives the permission to the
 terminal app. When launchd starts it, the permission goes to the `mfx` binary itself.
 
@@ -53,13 +62,15 @@ start, such as a missing permission, is retried every 10 s.
 
 ## Configure
 
-```sh
-mkdir -p ~/.config/mfx && target/release/mfx default-config > ~/.config/mfx/config.toml
-```
+Use **Settings…** in the menu (or `mfx settings`). Changes are checked while you edit,
+and Save is disabled while something is invalid. The running app reloads the file
+within a second of saving.
 
-See [`src/default-config.toml`](src/default-config.toml) for every option. Restart mfx
-after you edit the file. Buttons are numbered like Mac Mouse Fix: 3 = middle,
-4 = back, 5 = forward.
+You can also edit `~/.config/mfx/config.toml` by hand. Any change to the file is picked
+up automatically. If the file is invalid, the menu shows the error and mfx keeps
+the previous config. See [`src/default-config.toml`](src/default-config.toml) for every
+option. Saving from the settings window rewrites the file without its comments.
+Buttons are numbered like Mac Mouse Fix: 3 = middle, 4 = back, 5 = forward.
 
 The named actions send the macOS default keyboard shortcuts (Ctrl+↑ Mission Control,
 Ctrl+↓ App Exposé, Ctrl+←/→ Spaces, F11 Show Desktop). They only work while those
@@ -68,11 +79,14 @@ shortcuts are enabled under System Settings → Keyboard → Keyboard Shortcuts.
 ## Design
 
 ```
-src/engine.rs   pure state machine: Input events → Verdict (pass/swallow/invert) + Effects
-src/scroll.rs   wheel animator: per-notch distance × acceleration, exponential ease-out
-src/config.rs   TOML parsing and validation
-src/keys.rs     "cmd+shift+4" → keycode + CG flags
-src/macos/      hand-written CoreGraphics/CoreFoundation FFI, CGEventTap, event posting
+src/engine.rs     pure state machine: Input events → Verdict (pass/swallow/invert) + Effects
+src/scroll.rs     wheel animator: per-notch distance × acceleration, exponential ease-out
+src/config.rs     TOML file model (ConfigFile), validation into Config
+src/keys.rs       "cmd+shift+4" → keycode + CG flags
+src/settings.rs   egui settings window (separate process, writes the TOML)
+src/macos/app.rs  menu-bar app: winit event loop, tray menu, config watcher
+src/macos/tap.rs  CGEventTap, event posting, reload/pause
+src/macos/ffi.rs  hand-written CoreGraphics/CoreFoundation FFI
 ```
 
 All behavior lives in `engine`/`scroll` and is covered by `cargo test` without
@@ -80,7 +94,7 @@ needing a mouse. The macOS layer only translates events in both directions. Even
 that mfx posts are tagged in `kCGEventSourceUserData` so its own tap lets them through.
 
 Out of scope for now: per-app settings, double-click actions (they need a click
-delay), a menu-bar UI, and Mac Mouse Fix's private-API trackpad gesture simulation.
+delay), and Mac Mouse Fix's private-API trackpad gesture simulation.
 
 ## License
 

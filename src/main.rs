@@ -6,6 +6,7 @@ mod keys;
 #[cfg(target_os = "macos")]
 mod macos;
 mod scroll;
+mod settings;
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -16,7 +17,8 @@ const USAGE: &str = "\
 mfx — mouse button remapping, smooth scrolling and click-and-drag gestures for macOS
 
 USAGE:
-    mfx [run] [--config PATH] [--debug]   start (default command)
+    mfx [run] [--config PATH] [--debug]   start the menu-bar app (default command)
+    mfx settings [--config PATH]          open the settings window
     mfx check [--config PATH]             validate config and report Accessibility access
     mfx default-config                    print the default config
     mfx launch-agent                      print a LaunchAgent plist that starts mfx at login
@@ -139,11 +141,8 @@ fn real_main(args: Args) -> Result<(), String> {
             println!("config: OK ({source}), {} button binding(s)", cfg.buttons.len());
             check_permissions()
         }
-        "run" => {
-            let (cfg, source) = load_config(args.config)?;
-            eprintln!("mfx: config from {source}");
-            run(cfg, args.debug)
-        }
+        "run" => run(config_path(args.config)?, args.debug),
+        "settings" => settings::run(config_path(args.config)?),
         other => Err(format!("unknown command {other:?}\n\n{USAGE}")),
     }
 }
@@ -176,10 +175,11 @@ fn permission_hint() -> String {
 }
 
 #[cfg(target_os = "macos")]
-fn run(cfg: Config, debug: bool) -> Result<(), String> {
-    // Shows the system prompt for the responsible app if access is missing.
-    macos::tap::accessibility_trusted(true);
-    macos::tap::run(cfg, debug).map_err(|e| format!("{e}. {}", permission_hint()))
+fn run(config_path: PathBuf, debug: bool) -> Result<(), String> {
+    if !macos::tap::accessibility_trusted(false) {
+        eprintln!("mfx: Accessibility access missing. {}", permission_hint());
+    }
+    macos::app::run(config_path, debug)
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -188,6 +188,11 @@ fn check_permissions() -> Result<(), String> {
 }
 
 #[cfg(not(target_os = "macos"))]
-fn run(_cfg: Config, _debug: bool) -> Result<(), String> {
+fn run(_config_path: PathBuf, _debug: bool) -> Result<(), String> {
     Err("mfx only runs on macOS".into())
+}
+
+/// The file the app watches and the settings window writes.
+fn config_path(explicit: Option<PathBuf>) -> Result<PathBuf, String> {
+    explicit.or_else(Config::default_path).ok_or_else(|| "cannot locate the config: $HOME is not set".into())
 }

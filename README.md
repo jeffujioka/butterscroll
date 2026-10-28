@@ -64,8 +64,8 @@ start, such as a missing permission, is retried every 10 s.
 
 Use **Settings…** in the menu (or `mfx settings`). The window follows the system
 light/dark appearance and has three panes: Scrolling, Click and Drag, and Buttons.
-Changes are checked while you edit, and Save (⌘S) is disabled while something is
-invalid. The running app reloads the file within a second of saving.
+Changes are checked while you edit and saved automatically as soon as they are
+valid; there is no Save button. The running app reloads the file within a second.
 
 You can also edit `~/.config/mfx/config.toml` by hand. Any change to the file is picked
 up automatically. If the file is invalid, the menu shows the error and mfx keeps

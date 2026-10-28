@@ -1,8 +1,9 @@
 //! Settings window (`mfx settings`): edits the TOML config with live validation.
-//! The running menu-bar app notices the saved file and reloads it.
+//! Valid edits are written as soon as they settle; the running menu-bar app
+//! notices the file and reloads it.
 //!
-//! Styled after macOS System Settings: a sidebar of panes, grouped cards of
-//! label-left / control-right rows, and a footer with Save as the default button.
+//! Styled after macOS System Settings: a sidebar of panes and grouped cards of
+//! label-left / control-right rows. Like System Settings, there is no Save button.
 
 use std::ops::RangeInclusive;
 use std::path::{Path, PathBuf};
@@ -11,7 +12,7 @@ use std::sync::{Arc, LazyLock};
 use eframe::egui::epaint::text::VariationCoords;
 use eframe::egui::{
     self, pos2, vec2, Align, Align2, Color32, CornerRadius, FontData, FontDefinitions, FontFamily, FontId, FontTweak,
-    Frame, Key, Layout, Margin, Modifiers, PointerButton, Pos2, Rect, Response, RichText, Sense, Shape, Stroke,
+    Frame, Key, Layout, Margin, PointerButton, Pos2, Rect, Response, RichText, Sense, Shape, Stroke,
     StrokeKind, TextStyle, Theme, Ui, UiBuilder, Vec2, ViewportCommand,
 };
 
@@ -36,12 +37,15 @@ pub fn run(path: PathBuf) -> Result<(), String> {
     let (file, notice) = match std::fs::read_to_string(&path) {
         Ok(text) => match ConfigFile::parse(&text) {
             Ok(file) => (file, None),
-            Err(e) => (default_file(), Some(Notice::error(format!("{}: {e}. Showing defaults.", path.display())))),
+            Err(e) => (
+                default_file(),
+                Some(Notice::error(format!("{}: {e}. Showing defaults; editing will overwrite it.", path.display()))),
+            ),
         },
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => (default_file(), None),
         Err(e) => return Err(format!("reading {}: {e}", path.display())),
     };
-    let app = SettingsApp { path, saved: file.clone(), file, notice, pane: Pane::Scrolling };
+    let app = SettingsApp { path, written: file.clone(), file, notice, pane: Pane::Scrolling };
 
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
@@ -115,8 +119,9 @@ impl Pane {
 
 struct SettingsApp {
     path: PathBuf,
-    /// Last state on disk, for the dirty check and Revert.
-    saved: ConfigFile,
+    /// Last state written to (or read from) disk; edits differing from it are pending.
+    /// Updated on failed writes too, so a failing save isn't retried every frame.
+    written: ConfigFile,
     file: ConfigFile,
     notice: Option<Notice>,
     pane: Pane,
@@ -126,11 +131,14 @@ impl eframe::App for SettingsApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let p = Palette::of(ui);
         let validation = Config::from_file(&self.file);
-        let dirty = self.file != self.saved;
-        let can_save = dirty && validation.is_ok();
-        if ui.input_mut(|i| i.consume_key(Modifiers::COMMAND, Key::S)) && can_save {
+        let pending = self.file != self.written;
+        // Hold off while a pointer button is down so dragging a slider writes once, on
+        // release, instead of every frame. Closing the window flushes regardless.
+        let settled = ui.input(|i| !i.pointer.any_down() || i.viewport().close_requested());
+        if pending && settled && validation.is_ok() {
             self.save();
         }
+        let unsaved_invalid = self.file != self.written && validation.is_err();
 
         egui::Panel::left("sidebar")
             .exact_size(SIDEBAR_WIDTH)
@@ -140,7 +148,7 @@ impl eframe::App for SettingsApp {
 
         egui::Panel::bottom("footer")
             .frame(Frame::new().fill(p.window).inner_margin(Margin::symmetric(20, 12)))
-            .show(ui, |ui| self.footer(ui, validation.as_ref().err(), dirty, can_save));
+            .show(ui, |ui| self.footer(ui, validation.as_ref().err(), unsaved_invalid));
 
         egui::Panel::top("header")
             .exact_size(TITLEBAR_HEIGHT)
@@ -167,11 +175,9 @@ impl eframe::App for SettingsApp {
 
 impl SettingsApp {
     fn save(&mut self) {
+        self.written = self.file.clone();
         self.notice = Some(match save(&self.path, &self.file) {
-            Ok(()) => {
-                self.saved = self.file.clone();
-                Notice::info("Saved. mfx applies it within a second.")
-            }
+            Ok(()) => Notice::info("Saved. mfx applies it within a second."),
             Err(e) => Notice::error(e),
         });
     }
@@ -203,35 +209,20 @@ impl SettingsApp {
         });
     }
 
-    fn footer(&mut self, ui: &mut Ui, error: Option<&ConfigError>, dirty: bool, can_save: bool) {
+    fn footer(&mut self, ui: &mut Ui, error: Option<&ConfigError>, unsaved_invalid: bool) {
         let p = Palette::of(ui);
         if let Some(e) = error {
             ui.label(RichText::new(format!("⚠  {e}")).color(p.danger));
             ui.add_space(8.0);
         }
         ui.horizontal(|ui| {
-            let size = vec2(84.0, 24.0);
-            if ui.add(egui::Button::new("Restore Defaults").min_size(size)).clicked() {
+            if ui.add(egui::Button::new("Restore Defaults").min_size(vec2(84.0, 24.0))).clicked() {
                 self.file = default_file();
-                self.notice = Some(Notice::info("Defaults loaded. Save to apply."));
             }
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                let save = if can_save {
-                    egui::Button::new(RichText::new("Save").color(Color32::WHITE)).fill(p.accent).stroke(Stroke::NONE)
-                } else {
-                    egui::Button::new("Save")
-                };
-                if ui.add_enabled(can_save, save.min_size(size)).on_hover_text("⌘S").clicked() {
-                    self.save();
-                }
-                if ui.add_enabled(dirty, egui::Button::new("Revert").min_size(size)).clicked() {
-                    self.file = self.saved.clone();
-                    self.notice = None;
-                }
-                ui.add_space(8.0);
                 let status = match &self.notice {
+                    _ if unsaved_invalid => Some(("Not saved until the error is fixed", p.danger)),
                     Some(n) => Some((n.text.as_str(), if n.error { p.danger } else { p.secondary })),
-                    None if dirty => Some(("Unsaved changes", p.secondary)),
                     None => None,
                 };
                 if let Some((text, color)) = status {

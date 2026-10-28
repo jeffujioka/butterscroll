@@ -7,6 +7,7 @@ mod keys;
 mod macos;
 mod scroll;
 mod settings;
+mod update;
 mod version;
 mod paths;
 

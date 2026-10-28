@@ -154,18 +154,32 @@ fn check_permissions() -> Result<(), String> {
         println!("accessibility: granted");
         Ok(())
     } else {
-        Err("accessibility: NOT granted. Add this binary (or the terminal running it) under System Settings → \
-             Privacy & Security → Accessibility."
-            .into())
+        Err(format!("accessibility: NOT granted. {}", permission_hint()))
+    }
+}
+
+/// macOS grants Accessibility to the *responsible* app: the terminal when mfx is
+/// started from a shell, the mfx binary itself only when launchd starts it.
+#[cfg(target_os = "macos")]
+fn permission_hint() -> String {
+    const PANE: &str = "System Settings → Privacy & Security → Accessibility";
+    match std::env::var("TERM_PROGRAM") {
+        Ok(term) if !term.is_empty() => format!(
+            "mfx was started from a terminal ({term}), so macOS checks the terminal's permission, not mfx's. \
+             Either enable {term} under {PANE} and restart it, or start mfx through launchd (README → \
+             \"Start at login\") so the mfx entry applies."
+        ),
+        _ => format!(
+            "Enable mfx under {PANE}. After a rebuild with an ad-hoc signature, remove and re-add it."
+        ),
     }
 }
 
 #[cfg(target_os = "macos")]
 fn run(cfg: Config, debug: bool) -> Result<(), String> {
-    if !macos::tap::accessibility_trusted(true) {
-        eprintln!("mfx: Accessibility access not granted yet; macOS should show a prompt.");
-    }
-    macos::tap::run(cfg, debug)
+    // Shows the system prompt for the responsible app if access is missing.
+    macos::tap::accessibility_trusted(true);
+    macos::tap::run(cfg, debug).map_err(|e| format!("{e}. {}", permission_hint()))
 }
 
 #[cfg(not(target_os = "macos"))]

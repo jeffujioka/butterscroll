@@ -81,7 +81,7 @@ shortcuts are enabled under System Settings → Keyboard → Keyboard Shortcuts.
 
 ```
 src/engine.rs     pure state machine: Input events → Verdict (pass/swallow/invert) + Effects
-src/scroll.rs     wheel animator: per-notch distance × acceleration, exponential ease-out
+src/scroll.rs     wheel animator: per-notch distance × acceleration, critically damped spring (eases in, glides out)
 src/config.rs     TOML file model (ConfigFile), validation into Config
 src/keys.rs       "cmd+shift+4" → keycode + CG flags
 src/settings.rs   egui settings window (separate process, writes the TOML)

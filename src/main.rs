@@ -7,10 +7,14 @@ mod keys;
 mod macos;
 mod scroll;
 mod settings;
+mod update;
+mod version;
+mod paths;
 
 use std::path::PathBuf;
 use std::process::ExitCode;
 
+use paths::BUNDLE_ID;
 use config::Config;
 
 const USAGE: &str = "\
@@ -22,11 +26,10 @@ USAGE:
     mfx check [--config PATH]             validate config and report Accessibility access
     mfx default-config                    print the default config
     mfx launch-agent                      print a LaunchAgent plist that starts mfx at login
+    mfx --version                         print the version
 
 Config: $XDG_CONFIG_HOME/mfx/config.toml or ~/.config/mfx/config.toml (defaults if missing).
 ";
-
-const LABEL: &str = "com.jeffujioka.mfx";
 
 struct Args {
     command: String,
@@ -44,6 +47,7 @@ fn parse_args() -> Result<Args, String> {
                 args.config = Some(it.next().ok_or("--config needs a path")?.into());
             }
             "--debug" | "-d" => args.debug = true,
+            "-V" | "--version" => args.command = "version".into(),
             "-h" | "--help" => args.command = "help".into(),
             cmd if !command_seen && !cmd.starts_with('-') => {
                 args.command = cmd.into();
@@ -79,7 +83,7 @@ fn launch_agent_plist() -> Result<String, String> {
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>{LABEL}</string>
+    <string>{BUNDLE_ID}</string>
     <key>ProgramArguments</key>
     <array>
         <string>{exe}</string>
@@ -106,6 +110,10 @@ fn launch_agent_plist() -> Result<String, String> {
 }
 
 fn main() -> ExitCode {
+    #[cfg(target_os = "macos")]
+    if let Err(e) = macos::startup::reexec_if_symlinked() {
+        eprintln!("mfx: {e}");
+    }
     let args = match parse_args() {
         Ok(a) => a,
         Err(e) => {
@@ -124,6 +132,10 @@ fn main() -> ExitCode {
 
 fn real_main(args: Args) -> Result<(), String> {
     match args.command.as_str() {
+        "version" => {
+            println!("mfx {}", version::CURRENT);
+            Ok(())
+        }
         "help" => {
             print!("{USAGE}");
             Ok(())
@@ -137,6 +149,7 @@ fn real_main(args: Args) -> Result<(), String> {
             Ok(())
         }
         "check" => {
+            println!("binary: {}", std::env::current_exe().map_err(|e| format!("locating mfx binary: {e}"))?.display());
             let (cfg, source) = load_config(args.config)?;
             println!("config: OK ({source}), {} button binding(s)", cfg.buttons.len());
             check_permissions()
@@ -176,10 +189,58 @@ fn permission_hint() -> String {
 
 #[cfg(target_os = "macos")]
 fn run(config_path: PathBuf, debug: bool) -> Result<(), String> {
+    // Held until exit: the lock is what makes a second `mfx run` see us as running.
+    let _instance = match paths::main_lock().map(|p| macos::instance::try_acquire(&p)) {
+        Some(Ok(Some(lock))) => Some(lock),
+        Some(Ok(None)) => {
+            eprintln!("mfx: already running; opening Settings");
+            return open_settings(&config_path);
+        }
+        Some(Err(e)) => {
+            eprintln!("mfx: single-instance lock: {e}");
+            None
+        }
+        None => None,
+    };
+    redirect_log_to_file();
     if !macos::tap::accessibility_trusted(false) {
         eprintln!("mfx: Accessibility access missing. {}", permission_hint());
     }
     macos::app::run(config_path, debug)
+}
+
+/// Opens the Settings window as a child process, pointed at the same config.
+#[cfg(target_os = "macos")]
+fn open_settings(config_path: &PathBuf) -> Result<(), String> {
+    let exe = std::env::current_exe().map_err(|e| format!("locating mfx binary: {e}"))?;
+    std::process::Command::new(exe)
+        .arg("settings")
+        .arg("--config")
+        .arg(config_path)
+        .spawn()
+        .map(drop)
+        .map_err(|e| format!("opening Settings: {e}"))
+}
+
+/// Rotates the previous log and sends stderr to the log file, unless stderr is a terminal.
+/// Failures are printed and ignored: logging must never stop the app.
+#[cfg(target_os = "macos")]
+fn redirect_log_to_file() {
+    use std::io::IsTerminal;
+    use macos::startup::{redirect_stderr, rotate_if_larger, LOG_MAX_BYTES};
+    if std::io::stderr().is_terminal() {
+        return;
+    }
+    let (Some(log), Some(old)) = (paths::log_file(), paths::old_log_file()) else {
+        eprintln!("mfx: $HOME not set, not logging to a file");
+        return;
+    };
+    if let Err(e) = rotate_if_larger(&log, &old, LOG_MAX_BYTES) {
+        eprintln!("mfx: rotating {}: {e}", log.display());
+    }
+    if let Err(e) = redirect_stderr(&log) {
+        eprintln!("mfx: logging to {}: {e}", log.display());
+    }
 }
 
 #[cfg(not(target_os = "macos"))]

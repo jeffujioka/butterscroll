@@ -46,3 +46,8 @@ up = "mission-control"
 down = "app-expose"
 left = "space-right"
 right = "space-left"
+
+[updates]
+# Check GitHub once a day for a newer Release. Updates are only installed when you choose
+# "Update to …" in the menu.
+check_automatically = false

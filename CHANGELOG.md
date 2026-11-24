@@ -17,3 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Click and drag: hold a button and drag to scroll like two fingers on a trackpad, or to
   fire one action per direction (gestures).
 - Menu-bar app with a settings window that follows the system light/dark appearance.
+- The settings window explains every setting: a description under each one, labels at
+  both ends of each slider, an ⓘ button on the scroll timing and acceleration settings
+  that works through an example with your current values, and a Try It list at the end
+  of Scrolling to feel a change right after you make it.

@@ -42,13 +42,10 @@ fn with_tap<R>(f: impl FnOnce(&mut Tap) -> R) -> Option<R> {
     TAP.with(|cell| cell.try_borrow_mut().ok()?.as_mut().map(f))
 }
 
-/// Whether this process may observe and post input events. With `prompt`, macOS
-/// shows its Accessibility dialog if not yet granted.
-pub fn accessibility_trusted(prompt: bool) -> bool {
+/// Asks macOS to show its permission dialog if mfx has no access yet. On macOS
+/// 27.3 and later this lists mfx under System & App Protection Override.
+pub fn request_access() {
     unsafe {
-        if !prompt {
-            return AXIsProcessTrusted();
-        }
         let keys = [kAXTrustedCheckOptionPrompt as CFTypeRef];
         let values = [kCFBooleanTrue];
         let opts = CFDictionaryCreate(
@@ -59,33 +56,55 @@ pub fn accessibility_trusted(prompt: bool) -> bool {
             ptr::addr_of!(kCFTypeDictionaryKeyCallBacks).cast(),
             ptr::addr_of!(kCFTypeDictionaryValueCallBacks).cast(),
         );
-        let trusted = AXIsProcessTrustedWithOptions(opts);
+        AXIsProcessTrustedWithOptions(opts);
         CFRelease(opts);
-        trusted
     }
 }
 
-/// Installs the tap and animation timer on the main run loop. Events flow once
-/// the caller runs that loop (the menu-bar app does).
-pub fn install(cfg: Config, debug: bool) -> Result<(), String> {
-    install_signal_handlers();
-
+/// Creates the event tap; null while macOS denies it. Whether the tap can be
+/// created is the only reliable permission test: `AXIsProcessTrusted` ignores
+/// the System & App Protection Override grant of macOS 27.3.
+fn create_port() -> CFMachPortRef {
     let mask = [kCGEventOtherMouseDown, kCGEventOtherMouseUp, kCGEventOtherMouseDragged, kCGEventScrollWheel]
         .into_iter()
         .fold(0, |m, t| m | event_mask_bit(t));
-
     unsafe {
-        let port = CGEventTapCreate(
+        CGEventTapCreate(
             kCGSessionEventTap,
             kCGHeadInsertEventTap,
             kCGEventTapOptionDefault,
             mask,
             tap_callback,
             ptr::null_mut(),
-        );
-        if port.is_null() {
-            return Err("could not create the event tap: Accessibility access is missing".into());
-        }
+        )
+    }
+}
+
+/// Whether macOS lets this process create the event tap.
+pub fn can_create() -> bool {
+    let port = create_port();
+    if port.is_null() {
+        return false;
+    }
+    unsafe {
+        CFMachPortInvalidate(port);
+        CFRelease(port);
+    }
+    true
+}
+
+/// Installs the tap and animation timer on the main run loop. Events flow once
+/// the caller runs that loop (the menu-bar app does). Returns false, without
+/// calling `load_cfg`, while macOS denies the tap.
+pub fn install(load_cfg: impl FnOnce() -> Config, debug: bool) -> bool {
+    let port = create_port();
+    if port.is_null() {
+        return false;
+    }
+    install_signal_handlers();
+    let cfg = load_cfg();
+
+    unsafe {
         let run_loop = CFRunLoopGetMain();
         let source = CFMachPortCreateRunLoopSource(ptr::null(), port, 0);
         CFRunLoopAddSource(run_loop, source, kCFRunLoopCommonModes);
@@ -106,7 +125,7 @@ pub fn install(cfg: Config, debug: bool) -> Result<(), String> {
         });
         CGEventTapEnable(port, true);
     }
-    Ok(())
+    true
 }
 
 /// Swaps in a new config; any drag or scroll in progress is dropped.

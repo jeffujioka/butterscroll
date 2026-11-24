@@ -1,4 +1,4 @@
-# mfx
+# butterscroll
 
 A small personal macOS mouse enhancer written in Rust. It covers the core of what
 [Mac Mouse Fix](https://github.com/noah-nuebling/mac-mouse-fix) does:
@@ -26,56 +26,56 @@ each rebuild. To keep it across rebuilds, create a code-signing certificate
 and build with it:
 
 ```sh
-MFX_SIGN_ID="mfx local" ./scripts/build.sh
+BUTTERSCROLL_SIGN_ID="butterscroll local" ./scripts/build.sh
 ```
 
 ## Run
 
 ```sh
-target/release/mfx           # menu-bar app (add --debug to log every handled event)
-target/release/mfx check     # validates the config and reports whether macOS allows the event tap
+target/release/butterscroll           # menu-bar app (add --debug to log every handled event)
+target/release/butterscroll check     # validates the config and reports whether macOS allows the event tap
 ```
 
-mfx runs as a menu-bar icon (a mouse) with no Dock icon. The menu has:
+butterscroll runs as a menu-bar icon (a mouse) with no Dock icon. The menu has:
 
 - **Enabled**: pause or resume all remapping and scrolling.
 - **Settings…**: opens the settings window.
 - **Open Config File** / **Reload Config**.
-- **Grant Access…**: shown while the permission is missing. mfx keeps retrying, so it
+- **Grant Access…**: shown while the permission is missing. butterscroll keeps retrying, so it
   starts working as soon as you grant access.
-- **Quit mfx**.
+- **Quit butterscroll**.
 
-mfx needs **Input Monitoring** and permission to control the Mac:
+butterscroll needs **Input Monitoring** and permission to control the Mac:
 
 - macOS 27.3 and later: **System & App Protection Override** (System Settings → Privacy &
   Security). The Accessibility pane there is only for assistive technologies and has no
   `+`. In System & App Protection Override click `+`, press Cmd-Shift-G, enter the path
-  of the `mfx` binary, choose it and press Done. mfx starts without a restart.
+  of the `butterscroll` binary, choose it and press Done. butterscroll starts without a restart.
 - Earlier macOS: **Accessibility** (Privacy & Security → Accessibility).
 
-When you run mfx from a terminal, macOS gives the permission to the terminal app. When
-launchd starts it, the permission goes to the `mfx` binary itself.
+When you run butterscroll from a terminal, macOS gives the permission to the terminal app. When
+launchd starts it, the permission goes to the `butterscroll` binary itself.
 
 ### Start at login
 
 ```sh
-target/release/mfx launch-agent > ~/Library/LaunchAgents/com.jeffujioka.mfx.plist
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.jeffujioka.mfx.plist
-# stop: launchctl bootout gui/$(id -u)/com.jeffujioka.mfx
+target/release/butterscroll launch-agent > ~/Library/LaunchAgents/com.jeffujioka.butterscroll.plist
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.jeffujioka.butterscroll.plist
+# stop: launchctl bootout gui/$(id -u)/com.jeffujioka.butterscroll
 ```
 
-Logs go to `~/Library/Logs/mfx.log`. launchd restarts mfx if it crashes. A failed
+Logs go to `~/Library/Logs/butterscroll.log`. launchd restarts butterscroll if it crashes. A failed
 start, such as a missing permission, is retried every 10 s.
 
 ## Configure
 
-Use **Settings…** in the menu (or `mfx settings`). The window follows the system
+Use **Settings…** in the menu (or `butterscroll settings`). The window follows the system
 light/dark appearance and has three panes: Scrolling, Click and Drag, and Buttons.
 Changes are checked while you edit and saved automatically as soon as they are
 valid; there is no Save button. The running app reloads the file within a second.
 
-You can also edit `~/.config/mfx/config.toml` by hand. Any change to the file is picked
-up automatically. If the file is invalid, the menu shows the error and mfx keeps
+You can also edit `~/.config/butterscroll/config.toml` by hand. Any change to the file is picked
+up automatically. If the file is invalid, the menu shows the error and butterscroll keeps
 the previous config. See [`src/default-config.toml`](src/default-config.toml) for every
 option. Saving from the settings window rewrites the file without its comments.
 Buttons are numbered like Mac Mouse Fix: 3 = middle, 4 = back, 5 = forward.
@@ -99,7 +99,7 @@ src/macos/ffi.rs  hand-written CoreGraphics/CoreFoundation FFI
 
 All behavior lives in `engine`/`scroll` and is covered by `cargo test` without
 needing a mouse. The macOS layer only translates events in both directions. Events
-that mfx posts are tagged in `kCGEventSourceUserData` so its own tap lets them through.
+that butterscroll posts are tagged in `kCGEventSourceUserData` so its own tap lets them through.
 
 Out of scope for now: per-app settings, double-click actions (they need a click
 delay), and Mac Mouse Fix's private-API trackpad gesture simulation.

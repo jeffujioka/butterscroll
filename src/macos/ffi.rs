@@ -1,5 +1,5 @@
 //! Minimal hand-written bindings for the CoreGraphics, CoreFoundation and
-//! ApplicationServices calls mfx uses. Constants mirror CGEventTypes.h.
+//! ApplicationServices calls butterscroll uses. Constants mirror CGEventTypes.h.
 
 #![allow(non_upper_case_globals, non_camel_case_types)]
 

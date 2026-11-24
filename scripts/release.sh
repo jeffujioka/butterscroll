@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Release pipeline for mfx: build → package (sign, zip, verify) → publish (Draft) → promote.
+# Release pipeline for butterscroll: build → package (sign, zip, verify) → publish (Draft) → promote.
 # Maintainer guide: RELEASING.md. CI: .github/workflows/release.yml.
 #
 #   scripts/release.sh [--dry-run] [--tag vX.Y.Z[-pre]] [build|package|publish]
@@ -7,17 +7,17 @@
 #
 # No subcommand runs build, package and publish in order.
 # --dry-run: version from Cargo.toml unless --tag; skips tag/branch checks it can't run;
-#            signs ad-hoc unless MFX_SIGN_ID is set; publish/promote only print gh commands.
+#            signs ad-hoc unless BUTTERSCROLL_SIGN_ID is set; publish/promote only print gh commands.
 #
 # Environment:
-#   MFX_SIGN_ID         SHA-1 of the release signing certificate (required unless --dry-run)
-#   MFX_KEYCHAIN        keychain holding that certificate (optional; CI passes its temp keychain)
-#   MFX_DEFAULT_BRANCH  branch every release tag must be on (default: origin/HEAD)
+#   BUTTERSCROLL_SIGN_ID         SHA-1 of the release signing certificate (required unless --dry-run)
+#   BUTTERSCROLL_KEYCHAIN        keychain holding that certificate (optional; CI passes its temp keychain)
+#   BUTTERSCROLL_DEFAULT_BRANCH  branch every release tag must be on (default: origin/HEAD)
 set -euo pipefail
 
 # Names: the only place the app/bundle name lives in the pipeline (rename point).
-APP_NAME=mfx
-BUNDLE_ID=com.jeffujioka.mfx
+APP_NAME=butterscroll
+BUNDLE_ID=com.jeffujioka.butterscroll
 MIN_MACOS=13.0
 TARGETS=(aarch64-apple-darwin x86_64-apple-darwin)
 EXPECTED_ARCHS="x86_64 arm64"
@@ -82,7 +82,7 @@ resolve_version() {
 }
 
 default_branch() {
-  if [ -n "${MFX_DEFAULT_BRANCH:-}" ]; then echo "$MFX_DEFAULT_BRANCH"; return; fi
+  if [ -n "${BUTTERSCROLL_DEFAULT_BRANCH:-}" ]; then echo "$BUTTERSCROLL_DEFAULT_BRANCH"; return; fi
   git -C "$ROOT" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|^origin/||'
 }
 
@@ -107,7 +107,7 @@ check_tag() {
   local branch
   branch=$(default_branch)
   if [ -z "$branch" ] || ! git -C "$ROOT" rev-parse -q --verify "refs/remotes/origin/$branch" >/dev/null; then
-    [ "$DRY_RUN" = 1 ] || die "can't find origin's default branch (set MFX_DEFAULT_BRANCH)"
+    [ "$DRY_RUN" = 1 ] || die "can't find origin's default branch (set BUTTERSCROLL_DEFAULT_BRANCH)"
     warn "no remote default branch: skipping the branch check"
     return
   fi
@@ -238,10 +238,10 @@ cmd_package() {
   [ -d "$APP" ] || die "missing $APP: run 'release.sh build' first"
   [ -s "$NOTES" ] || die "missing $NOTES: run 'release.sh build' first"
 
-  local sign_id=${MFX_SIGN_ID:-} dr=""
+  local sign_id=${BUTTERSCROLL_SIGN_ID:-} dr=""
   if [ -z "$sign_id" ]; then
-    [ "$DRY_RUN" = 1 ] || die "MFX_SIGN_ID is not set: real releases must be signed with the release certificate"
-    warn "MFX_SIGN_ID not set: signing AD-HOC. This bundle could never update an installed mfx."
+    [ "$DRY_RUN" = 1 ] || die "BUTTERSCROLL_SIGN_ID is not set: real releases must be signed with the release certificate"
+    warn "BUTTERSCROLL_SIGN_ID not set: signing AD-HOC. This bundle could never update an installed butterscroll."
     sign_id=-
   elif [ -f "$DR_FILE" ]; then
     dr=$(cat "$DR_FILE")
@@ -253,7 +253,7 @@ cmd_package() {
 
   log "sign"
   local kc=()
-  [ -z "${MFX_KEYCHAIN:-}" ] || kc=(--keychain "$MFX_KEYCHAIN")
+  [ -z "${BUTTERSCROLL_KEYCHAIN:-}" ] || kc=(--keychain "$BUTTERSCROLL_KEYCHAIN")
   codesign --force --timestamp=none --sign "$sign_id" ${kc[@]+"${kc[@]}"} --identifier "$BUNDLE_ID" "$APP"
 
   log "zip"

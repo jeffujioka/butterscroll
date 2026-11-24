@@ -1,6 +1,6 @@
 # Releases are signed with one long-lived self-signed certificate
 
-mfx is published without the paid Apple Developer Program, so Releases are not notarized and the official Homebrew cask is not an option. Every Release is instead signed with a single self-signed code-signing certificate (20-year validity) whose exported `.p12` is kept as a backup. That certificate does two jobs: macOS ties the Accessibility grant to it, so the grant survives updates, and both `install.sh` and the in-app updater only install an app signed with the same certificate. Losing or replacing it forces every user to grant Accessibility again and reinstall by hand.
+butterscroll is published without the paid Apple Developer Program, so Releases are not notarized and the official Homebrew cask is not an option. Every Release is instead signed with a single self-signed code-signing certificate (20-year validity) whose exported `.p12` is kept as a backup. That certificate does two jobs: macOS ties the Accessibility grant to it, so the grant survives updates, and both `install.sh` and the in-app updater only install an app signed with the same certificate. Losing or replacing it forces every user to grant Accessibility again and reinstall by hand.
 
 ## Considered Options
 

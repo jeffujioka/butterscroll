@@ -102,7 +102,7 @@ impl App {
                 Some(cfg)
             }
             Err(e) => {
-                eprintln!("mfx: {e}; keeping the previous config");
+                eprintln!("butterscroll: {e}; keeping the previous config");
                 self.config_error = Some(e);
                 None
             }
@@ -116,7 +116,7 @@ impl App {
         let debug = self.debug;
         if tap::install(|| self.load_config().unwrap_or_default(), debug) {
             self.tap_installed = true;
-            eprintln!("mfx: running (config: {})", self.config_path.display());
+            eprintln!("butterscroll: running (config: {})", self.config_path.display());
         }
     }
 
@@ -124,7 +124,7 @@ impl App {
         if let Some(cfg) = self.load_config() {
             if self.tap_installed {
                 tap::reload(cfg);
-                eprintln!("mfx: config reloaded");
+                eprintln!("butterscroll: config reloaded");
             }
         }
     }
@@ -136,9 +136,9 @@ impl App {
         } else if let Some(e) = &self.config_error {
             format!("Config error: {}", truncate(e, 60))
         } else if items.enabled.is_checked() {
-            "mfx is running".into()
+            "butterscroll is running".into()
         } else {
-            "mfx is paused".into()
+            "butterscroll is paused".into()
         };
         items.status.set_text(status);
         items.grant.set_enabled(!self.tap_installed);
@@ -156,7 +156,7 @@ impl App {
         });
         match spawned {
             Ok(child) => self.settings_child = Some(child),
-            Err(e) => eprintln!("mfx: could not open settings: {e}"),
+            Err(e) => eprintln!("butterscroll: could not open settings: {e}"),
         }
     }
 
@@ -168,7 +168,7 @@ impl App {
                 .map_or(Ok(()), std::fs::create_dir_all)
                 .and_then(|()| std::fs::write(&self.config_path, DEFAULT_TOML));
             if let Err(e) = written {
-                eprintln!("mfx: could not create {}: {e}", self.config_path.display());
+                eprintln!("butterscroll: could not create {}: {e}", self.config_path.display());
                 return;
             }
         }
@@ -197,14 +197,14 @@ impl App {
 
     fn build_tray(&mut self) {
         let items = Items {
-            version: MenuItem::new(format!("mfx {}", version::CURRENT), false, None),
-            status: MenuItem::new("mfx", false, None),
+            version: MenuItem::new(format!("butterscroll {}", version::CURRENT), false, None),
+            status: MenuItem::new("butterscroll", false, None),
             enabled: CheckMenuItem::new("Enabled", true, true, None),
             grant: MenuItem::new("Grant Access…", true, None),
             settings: MenuItem::new("Settings…", true, None),
             open_config: MenuItem::new("Open Config File", true, None),
             reload: MenuItem::new("Reload Config", true, None),
-            quit: MenuItem::new("Quit mfx", true, None),
+            quit: MenuItem::new("Quit butterscroll", true, None),
         };
         let menu = Menu::new();
         let built = menu.append_items(&[
@@ -220,17 +220,17 @@ impl App {
             &items.quit,
         ]);
         if let Err(e) = built {
-            eprintln!("mfx: building the menu: {e}");
+            eprintln!("butterscroll: building the menu: {e}");
         }
         let icon = Icon::from_rgba(mouse_icon_rgba(ICON_PX), ICON_PX, ICON_PX).expect("icon size matches buffer");
         match TrayIconBuilder::new()
             .with_menu(Box::new(menu))
             .with_icon_templated(icon)
-            .with_tooltip("mfx")
+            .with_tooltip("butterscroll")
             .build()
         {
             Ok(tray) => self.tray = Some(tray),
-            Err(e) => eprintln!("mfx: creating the menu-bar icon: {e}"),
+            Err(e) => eprintln!("butterscroll: creating the menu-bar icon: {e}"),
         }
         self.items = Some(items);
     }
@@ -244,7 +244,7 @@ impl ApplicationHandler<UserEvent> for App {
             self.try_install_tap();
             if !self.tap_installed {
                 tap::request_access(); // prompts once if missing
-                eprintln!("mfx: waiting for permission (menu → Grant Access…)");
+                eprintln!("butterscroll: waiting for permission (menu → Grant Access…)");
             }
             self.refresh_menu();
         }
@@ -274,7 +274,7 @@ impl ApplicationHandler<UserEvent> for App {
 
 fn open(args: &[&std::ffi::OsStr]) {
     if let Err(e) = Command::new("/usr/bin/open").args(args).spawn() {
-        eprintln!("mfx: running open: {e}");
+        eprintln!("butterscroll: running open: {e}");
     }
 }
 

@@ -41,7 +41,7 @@ mod tests {
     fn unique_temp_dir() -> PathBuf {
         static COUNTER: AtomicUsize = AtomicUsize::new(0);
         let n = COUNTER.fetch_add(1, Ordering::Relaxed);
-        std::env::temp_dir().join(format!("mfx-instance-{}-{n}", std::process::id()))
+        std::env::temp_dir().join(format!("butterscroll-instance-{}-{n}", std::process::id()))
     }
 
     #[test]

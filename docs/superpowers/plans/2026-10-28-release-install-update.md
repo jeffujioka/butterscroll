@@ -37,7 +37,7 @@
 ### Task 1: Import the release pipeline onto this branch
 
 **Files:**
-- Create (copied from the main checkout `/Users/JFUJIOK/projects/jeffujioka/mouse-fix-rs`): `scripts/release.sh`, `packaging/Info.plist`, `.github/workflows/release.yml`, `rust-toolchain.toml`, `CHANGELOG.md`, `RELEASING.md`
+- Create (copied from the main checkout): `scripts/release.sh`, `packaging/Info.plist`, `.github/workflows/release.yml`, `rust-toolchain.toml`, `CHANGELOG.md`, `RELEASING.md`
 - Modify: `.gitignore` (add the `dist/` line from the main checkout's version)
 
 - [ ] **Step 1:** Confirm with the maintainer that the Q12 session (herdr agent `handoff-mfx-release`) has finished editing those files.

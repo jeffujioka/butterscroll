@@ -18,7 +18,9 @@ use super::tap;
 use crate::config::{Config, DEFAULT_TOML};
 use crate::version;
 
-const ACCESSIBILITY_PANE: &str = "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility";
+/// macOS 27.3 moved event-tap permission out of Accessibility into System & App
+/// Protection Override, which has no URL anchor of its own: open Privacy & Security.
+const PRIVACY_PANE: &str = "x-apple.systempreferences:com.apple.preference.security";
 
 enum UserEvent {
     Menu(MenuEvent),
@@ -30,7 +32,7 @@ struct Items {
     version: MenuItem,
     status: MenuItem,
     enabled: CheckMenuItem,
-    accessibility: MenuItem,
+    grant: MenuItem,
     settings: MenuItem,
     open_config: MenuItem,
     reload: MenuItem,
@@ -108,16 +110,13 @@ impl App {
     }
 
     fn try_install_tap(&mut self) {
-        if self.tap_installed || !tap::accessibility_trusted(false) {
+        if self.tap_installed {
             return;
         }
-        let cfg = self.load_config().unwrap_or_default();
-        match tap::install(cfg, self.debug) {
-            Ok(()) => {
-                self.tap_installed = true;
-                eprintln!("mfx: running (config: {})", self.config_path.display());
-            }
-            Err(e) => eprintln!("mfx: {e}"),
+        let debug = self.debug;
+        if tap::install(|| self.load_config().unwrap_or_default(), debug) {
+            self.tap_installed = true;
+            eprintln!("mfx: running (config: {})", self.config_path.display());
         }
     }
 
@@ -133,7 +132,7 @@ impl App {
     fn refresh_menu(&self) {
         let Some(items) = &self.items else { return };
         let status = if !self.tap_installed {
-            "Needs Accessibility access".to_string()
+            "Needs permission".to_string()
         } else if let Some(e) = &self.config_error {
             format!("Config error: {}", truncate(e, 60))
         } else if items.enabled.is_checked() {
@@ -142,7 +141,7 @@ impl App {
             "mfx is paused".into()
         };
         items.status.set_text(status);
-        items.accessibility.set_enabled(!self.tap_installed);
+        items.grant.set_enabled(!self.tap_installed);
         items.enabled.set_enabled(self.tap_installed);
     }
 
@@ -181,9 +180,9 @@ impl App {
         let id = event.id;
         if id == *items.enabled.id() {
             tap::set_enabled(items.enabled.is_checked());
-        } else if id == *items.accessibility.id() {
-            tap::accessibility_trusted(true);
-            open(&[ACCESSIBILITY_PANE.as_ref()]);
+        } else if id == *items.grant.id() {
+            tap::request_access();
+            open(&[PRIVACY_PANE.as_ref()]);
         } else if id == *items.settings.id() {
             self.open_settings();
         } else if id == *items.open_config.id() {
@@ -201,7 +200,7 @@ impl App {
             version: MenuItem::new(format!("mfx {}", version::CURRENT), false, None),
             status: MenuItem::new("mfx", false, None),
             enabled: CheckMenuItem::new("Enabled", true, true, None),
-            accessibility: MenuItem::new("Grant Accessibility Access…", true, None),
+            grant: MenuItem::new("Grant Access…", true, None),
             settings: MenuItem::new("Settings…", true, None),
             open_config: MenuItem::new("Open Config File", true, None),
             reload: MenuItem::new("Reload Config", true, None),
@@ -212,7 +211,7 @@ impl App {
             &items.version,
             &items.status,
             &items.enabled,
-            &items.accessibility,
+            &items.grant,
             &PredefinedMenuItem::separator(),
             &items.settings,
             &items.open_config,
@@ -242,10 +241,10 @@ impl ApplicationHandler<UserEvent> for App {
         // The status item must be created once the app has finished launching.
         if cause == StartCause::Init {
             self.build_tray();
-            tap::accessibility_trusted(true); // prompts once if missing
             self.try_install_tap();
             if !self.tap_installed {
-                eprintln!("mfx: waiting for Accessibility access (menu → Grant Accessibility Access…)");
+                tap::request_access(); // prompts once if missing
+                eprintln!("mfx: waiting for permission (menu → Grant Access…)");
             }
             self.refresh_menu();
         }

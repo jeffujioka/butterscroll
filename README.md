@@ -33,7 +33,7 @@ MFX_SIGN_ID="mfx local" ./scripts/build.sh
 
 ```sh
 target/release/mfx           # menu-bar app (add --debug to log every handled event)
-target/release/mfx check     # validates the config and reports Accessibility access
+target/release/mfx check     # validates the config and reports whether macOS allows the event tap
 ```
 
 mfx runs as a menu-bar icon (a mouse) with no Dock icon. The menu has:
@@ -41,13 +41,20 @@ mfx runs as a menu-bar icon (a mouse) with no Dock icon. The menu has:
 - **Enabled**: pause or resume all remapping and scrolling.
 - **Settings…**: opens the settings window.
 - **Open Config File** / **Reload Config**.
-- **Grant Accessibility Access…**: shown while the permission is missing. mfx keeps
-  retrying, so it starts working as soon as you grant access.
+- **Grant Access…**: shown while the permission is missing. mfx keeps retrying, so it
+  starts working as soon as you grant access.
 - **Quit mfx**.
 
-mfx needs **Accessibility** access (System Settings → Privacy & Security →
-Accessibility). When you run mfx from a terminal, macOS gives the permission to the
-terminal app. When launchd starts it, the permission goes to the `mfx` binary itself.
+mfx needs **Input Monitoring** and permission to control the Mac:
+
+- macOS 27.3 and later: **System & App Protection Override** (System Settings → Privacy &
+  Security). The Accessibility pane there is only for assistive technologies and has no
+  `+`. In System & App Protection Override click `+`, press Cmd-Shift-G, enter the path
+  of the `mfx` binary, choose it and press Done. mfx starts without a restart.
+- Earlier macOS: **Accessibility** (Privacy & Security → Accessibility).
+
+When you run mfx from a terminal, macOS gives the permission to the terminal app. When
+launchd starts it, the permission goes to the `mfx` binary itself.
 
 ### Start at login
 

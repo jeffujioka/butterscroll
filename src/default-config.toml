@@ -30,7 +30,7 @@ click = "passthrough"
 drag = "scroll"
 
 [buttons.4]
-click = "back"
+click = "passthrough"
 drag = "gestures"
 [buttons.4.gestures]
 up = "mission-control"
@@ -39,7 +39,7 @@ left = "space-right"
 right = "space-left"
 
 [buttons.5]
-click = "forward"
+click = "passthrough"
 drag = "gestures"
 [buttons.5.gestures]
 up = "mission-control"

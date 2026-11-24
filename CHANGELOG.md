@@ -21,3 +21,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   both ends of each slider, an ⓘ button on the scroll timing and acceleration settings
   that works through an example with your current values, and a Try It list at the end
   of Scrolling to feel a change right after you make it.
+
+### Fixed
+
+- Back and forward buttons did nothing in Dia once mfx ran: mfx swallowed them and sent
+  `⌘[` and `⌘]`, which Dia ignores (it uses `⌘←` and `⌘→`). Buttons 4 and 5 now default
+  to a normal click, so each app handles them as it does without mfx. An existing config
+  keeps its own choice; set `click = "passthrough"` on buttons 4 and 5 to switch.
+- On macOS 27.3 mfx stayed idle although it was allowed in System & App Protection
+  Override: it waited for `AXIsProcessTrusted`, which ignores that grant. It now tries to
+  create the event tap and judges by the result. `mfx check` does the same, and the
+  messages and the menu item point to the right pane.

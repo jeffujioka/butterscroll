@@ -23,7 +23,7 @@ mfx — mouse button remapping, smooth scrolling and click-and-drag gestures for
 USAGE:
     mfx [run] [--config PATH] [--debug]   start the menu-bar app (default command)
     mfx settings [--config PATH]          open the settings window
-    mfx check [--config PATH]             validate config and report Accessibility access
+    mfx check [--config PATH]             validate config and report whether macOS allows the event tap
     mfx default-config                    print the default config
     mfx launch-agent                      print a LaunchAgent plist that starts mfx at login
     mfx --version                         print the version
@@ -162,19 +162,20 @@ fn real_main(args: Args) -> Result<(), String> {
 
 #[cfg(target_os = "macos")]
 fn check_permissions() -> Result<(), String> {
-    if macos::tap::accessibility_trusted(false) {
-        println!("accessibility: granted");
+    if macos::tap::can_create() {
+        println!("event tap: allowed");
         Ok(())
     } else {
-        Err(format!("accessibility: NOT granted. {}", permission_hint()))
+        Err(format!("event tap: NOT allowed. {}", permission_hint()))
     }
 }
 
-/// macOS grants Accessibility to the *responsible* app: the terminal when mfx is
+/// macOS grants the permission to the *responsible* app: the terminal when mfx is
 /// started from a shell, the mfx binary itself only when launchd starts it.
 #[cfg(target_os = "macos")]
 fn permission_hint() -> String {
-    const PANE: &str = "System Settings → Privacy & Security → Accessibility";
+    const PANE: &str = "System Settings → Privacy & Security → System & App Protection Override \
+                        (Accessibility before macOS 27.3) and → Input Monitoring";
     match std::env::var("TERM_PROGRAM") {
         Ok(term) if !term.is_empty() => format!(
             "mfx was started from a terminal ({term}), so macOS checks the terminal's permission, not mfx's. \
@@ -203,8 +204,8 @@ fn run(config_path: PathBuf, debug: bool) -> Result<(), String> {
         None => None,
     };
     redirect_log_to_file();
-    if !macos::tap::accessibility_trusted(false) {
-        eprintln!("mfx: Accessibility access missing. {}", permission_hint());
+    if !macos::tap::can_create() {
+        eprintln!("mfx: permission missing. {}", permission_hint());
     }
     macos::app::run(config_path, debug)
 }

@@ -126,6 +126,7 @@ extern "C" {
     pub static kCFTypeDictionaryValueCallBacks: c_void;
 
     pub fn CFRelease(cf: CFTypeRef);
+    pub fn CFMachPortInvalidate(port: CFMachPortRef);
     pub fn CFMachPortCreateRunLoopSource(
         allocator: CFAllocatorRef,
         port: CFMachPortRef,
@@ -158,7 +159,6 @@ extern "C" {
 #[link(name = "ApplicationServices", kind = "framework")]
 extern "C" {
     pub static kAXTrustedCheckOptionPrompt: CFStringRef;
-    pub fn AXIsProcessTrusted() -> bool;
     pub fn AXIsProcessTrustedWithOptions(options: CFDictionaryRef) -> bool;
 }
 

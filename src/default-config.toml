@@ -1,5 +1,5 @@
-# mfx configuration. Location: ~/.config/mfx/config.toml (or $XDG_CONFIG_HOME/mfx/config.toml).
-# mfx reloads this file automatically when it changes.
+# butterscroll configuration. Location: ~/.config/butterscroll/config.toml (or $XDG_CONFIG_HOME/butterscroll/config.toml).
+# butterscroll reloads this file automatically when it changes.
 #
 # Actions: "none", "passthrough" (original click), "back", "forward", "mission-control",
 # "app-expose", "space-left", "space-right", "show-desktop", or { shortcut = "cmd+shift+4" }.

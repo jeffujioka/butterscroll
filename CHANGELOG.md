@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to mfx are documented in this file.
+All notable changes to butterscroll are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
@@ -24,11 +24,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Back and forward buttons did nothing in Dia once mfx ran: mfx swallowed them and sent
+- Back and forward buttons did nothing in Dia once butterscroll ran: butterscroll swallowed them and sent
   `⌘[` and `⌘]`, which Dia ignores (it uses `⌘←` and `⌘→`). Buttons 4 and 5 now default
-  to a normal click, so each app handles them as it does without mfx. An existing config
+  to a normal click, so each app handles them as it does without butterscroll. An existing config
   keeps its own choice; set `click = "passthrough"` on buttons 4 and 5 to switch.
-- On macOS 27.3 mfx stayed idle although it was allowed in System & App Protection
+- On macOS 27.3 butterscroll stayed idle although it was allowed in System & App Protection
   Override: it waited for `AXIsProcessTrusted`, which ignores that grant. It now tries to
-  create the event tap and judges by the result. `mfx check` does the same, and the
+  create the event tap and judges by the result. `butterscroll check` does the same, and the
   messages and the menu item point to the right pane.

@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::keys::Shortcut;
 
-/// Shipped default; `mfx default-config` prints exactly this text.
+/// Shipped default; `butterscroll default-config` prints exactly this text.
 pub const DEFAULT_TOML: &str = include_str!("default-config.toml");
 
 #[derive(Debug, Clone, PartialEq)]
@@ -264,7 +264,7 @@ impl ConfigFile {
     /// TOML as the settings window saves it (comments of a hand-edited file are not kept).
     pub fn to_toml(&self) -> String {
         let body = toml::to_string_pretty(self).expect("config file model always serializes");
-        format!("# Written by `mfx settings`. Options: `mfx default-config`.\n\n{body}")
+        format!("# Written by `butterscroll settings`. Options: `butterscroll default-config`.\n\n{body}")
     }
 }
 
@@ -348,13 +348,13 @@ impl Config {
         Config::parse(&text).map_err(|e| ConfigError(format!("{}: {e}", path.display())))
     }
 
-    /// `$XDG_CONFIG_HOME/mfx/config.toml`, falling back to `~/.config/mfx/config.toml`.
+    /// `$XDG_CONFIG_HOME/butterscroll/config.toml`, falling back to `~/.config/butterscroll/config.toml`.
     pub fn default_path() -> Option<PathBuf> {
         let base = match std::env::var_os("XDG_CONFIG_HOME") {
             Some(dir) if !dir.is_empty() => PathBuf::from(dir),
             _ => PathBuf::from(std::env::var_os("HOME")?).join(".config"),
         };
-        Some(base.join("mfx").join("config.toml"))
+        Some(base.join("butterscroll").join("config.toml"))
     }
 }
 

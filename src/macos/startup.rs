@@ -7,13 +7,13 @@ use std::os::unix::process::CommandExt;
 use std::path::Path;
 use std::process::Command;
 
-/// The log is rotated to `mfx.old.log` once it grows past this size.
+/// The log is rotated to `butterscroll.old.log` once it grows past this size.
 pub const LOG_MAX_BYTES: u64 = 1_048_576;
 
 /// Re-executes the canonical path of this binary when it was started through a
 /// symlink, so macOS sees the real bundle/binary. Returns only when no re-exec happened.
 pub fn reexec_if_symlinked() -> Result<(), String> {
-    let exe = std::env::current_exe().map_err(|e| format!("locating mfx binary: {e}"))?;
+    let exe = std::env::current_exe().map_err(|e| format!("locating butterscroll binary: {e}"))?;
     let canonical = exe.canonicalize().map_err(|e| format!("resolving {}: {e}", exe.display()))?;
     if canonical == exe {
         return Ok(());
@@ -53,7 +53,7 @@ mod tests {
 
     /// Unique per test name and process, so parallel tests never share files.
     fn scratch(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("mfx-startup-{}-{name}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("butterscroll-startup-{}-{name}", std::process::id()));
         fs::create_dir_all(&dir).unwrap();
         dir
     }
@@ -61,8 +61,8 @@ mod tests {
     #[test]
     fn rotates_only_above_limit() {
         let dir = scratch("rotates");
-        let log = dir.join("mfx.log");
-        let old = dir.join("mfx.old.log");
+        let log = dir.join("butterscroll.log");
+        let old = dir.join("butterscroll.old.log");
 
         // Above the limit: the log moves to `old`, replacing an existing old file.
         fs::write(&log, b"0123456789").unwrap();

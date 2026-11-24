@@ -5,8 +5,8 @@ use serde::Deserialize;
 
 use crate::version::Version;
 
-/// The GitHub repository that publishes mfx releases. The one place to rename.
-pub const REPO: &str = "jeffujioka/mouse-fix-rs";
+/// The GitHub repository that publishes butterscroll releases. The one place to rename.
+pub const REPO: &str = "jeffujioka/butterscroll";
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Release {
@@ -37,7 +37,7 @@ struct Asset {
 
 /// The universal zip that a release of `v` must attach.
 pub fn asset_name(v: &Version) -> String {
-    format!("mfx-v{v}-universal.zip")
+    format!("butterscroll-v{v}-universal.zip")
 }
 
 /// `override_url` if given, else the GitHub API endpoint for the latest release of [`REPO`].
@@ -48,9 +48,9 @@ pub fn latest_url_from(override_url: Option<&str>) -> String {
     }
 }
 
-/// [`latest_url_from`] with the `MFX_UPDATE_URL` environment override.
+/// [`latest_url_from`] with the `BUTTERSCROLL_UPDATE_URL` environment override.
 pub fn latest_url() -> String {
-    latest_url_from(std::env::var("MFX_UPDATE_URL").ok().as_deref())
+    latest_url_from(std::env::var("BUTTERSCROLL_UPDATE_URL").ok().as_deref())
 }
 
 /// Reads a `releases/latest` response. Errors on non-release bodies, drafts, pre-releases,
@@ -91,13 +91,13 @@ mod tests {
         let r = parse_latest(include_str!("fixtures/release-latest.json")).unwrap();
         assert_eq!(r.tag, "v0.2.0");
         assert_eq!(r.version, Version::parse("0.2.0").unwrap());
-        assert!(r.zip_url.ends_with("/mfx-v0.2.0-universal.zip"));
+        assert!(r.zip_url.ends_with("/butterscroll-v0.2.0-universal.zip"));
     }
     #[test]
     fn parse_latest_requires_matching_asset() {
         // Same release, but the universal zip is renamed: no asset matches `asset_name`.
         let json = include_str!("fixtures/release-latest.json")
-            .replace("mfx-v0.2.0-universal.zip", "mfx-v0.2.0-arm64.zip");
+            .replace("butterscroll-v0.2.0-universal.zip", "butterscroll-v0.2.0-arm64.zip");
         assert!(parse_latest(&json).is_err());
     }
     #[test]
@@ -128,6 +128,6 @@ mod tests {
     #[test]
     fn update_url_override() {
         assert_eq!(latest_url_from(Some("http://x/l.json")), "http://x/l.json");
-        assert!(latest_url_from(None).ends_with("/repos/jeffujioka/mouse-fix-rs/releases/latest"));
+        assert!(latest_url_from(None).ends_with("/repos/jeffujioka/butterscroll/releases/latest"));
     }
 }

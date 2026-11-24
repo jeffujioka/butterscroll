@@ -1,11 +1,11 @@
-# mfx
+# butterscroll
 
 A macOS menu-bar mouse enhancer, published as an open-source app for anyone to install.
 
 ## Distribution
 
 **Release**:
-A published, versioned build of mfx that anyone can download.
+A published, versioned build of butterscroll that anyone can download.
 _Avoid_: build, drop, ship
 
 **Version**:
@@ -23,9 +23,9 @@ _Avoid_: beta, nightly, RC build
 ## Settings
 
 **Start at login**:
-Whether macOS launches mfx when the user logs in. macOS owns this state; mfx only reads and changes it, never keeps its own copy.
+Whether macOS launches butterscroll when the user logs in. macOS owns this state; butterscroll only reads and changes it, never keeps its own copy.
 _Avoid_: auto-start, launch agent, autostart
 
 **First launch**:
-The first time mfx runs for a given user on a Mac. It is the only moment mfx turns on Start at login by itself.
+The first time butterscroll runs for a given user on a Mac. It is the only moment butterscroll turns on Start at login by itself.
 _Avoid_: first run, onboarding

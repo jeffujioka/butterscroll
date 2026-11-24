@@ -1,4 +1,4 @@
-//! Settings window (`mfx settings`): edits the TOML config with live validation.
+//! Settings window (`butterscroll settings`): edits the TOML config with live validation.
 //! Valid edits are written as soon as they settle; the running menu-bar app
 //! notices the file and reloads it.
 //!
@@ -41,13 +41,13 @@ const TRY_IT_HEIGHT: f32 = 160.0;
 const TRY_IT_ROW_HEIGHT: f32 = 22.0;
 
 pub fn run(path: PathBuf) -> Result<(), String> {
-    // Held while the window is open: a second `mfx settings` does nothing.
+    // Held while the window is open: a second `butterscroll settings` does nothing.
     #[cfg(target_os = "macos")]
     let _instance = match crate::paths::settings_lock().map(|p| crate::macos::instance::try_acquire(&p)) {
         Some(Ok(Some(lock))) => Some(lock),
         Some(Ok(None)) => return Ok(()),
         Some(Err(e)) => {
-            eprintln!("mfx: single-instance lock: {e}");
+            eprintln!("butterscroll: single-instance lock: {e}");
             None
         }
         None => None,
@@ -67,7 +67,7 @@ pub fn run(path: PathBuf) -> Result<(), String> {
 
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_title("mfx Settings")
+            .with_title("butterscroll Settings")
             .with_inner_size([760.0, 600.0])
             .with_min_inner_size([680.0, 420.0])
             .with_fullsize_content_view(true)
@@ -77,7 +77,7 @@ pub fn run(path: PathBuf) -> Result<(), String> {
         ..Default::default()
     };
     eframe::run_native(
-        "mfx Settings",
+        "butterscroll Settings",
         options,
         Box::new(|cc| {
             install_fonts(&cc.egui_ctx);
@@ -195,7 +195,7 @@ impl SettingsApp {
     fn save(&mut self) {
         self.written = self.file.clone();
         self.notice = Some(match save(&self.path, &self.file) {
-            Ok(()) => Notice::info("Saved. mfx applies it within a second."),
+            Ok(()) => Notice::info("Saved. butterscroll applies it within a second."),
             Err(e) => Notice::error(e),
         });
     }
@@ -363,7 +363,7 @@ fn scroll_pane(ui: &mut Ui, file: &mut ConfigFile) {
 
     section(ui, "Try It");
     card(ui, try_it);
-    footnote(ui, "Scroll this list with your mouse wheel after a change. It scrolls with these settings while mfx is running.");
+    footnote(ui, "Scroll this list with your mouse wheel after a change. It scrolls with these settings while butterscroll is running.");
 }
 
 /// The notch of a fast streak, counted from 1, whose multiplier first reaches `max`;

@@ -16,8 +16,8 @@ use crate::engine::{Effect, Engine, Input, ScrollPhase, Verdict};
 use crate::keys::Shortcut;
 use crate::scroll::FRAME;
 
-/// Marks events mfx posted so its own tap lets them through.
-const MFX_TAG: i64 = 0x6d66_7821; // "mfx!"
+/// Marks events butterscroll posted so its own tap lets them through.
+const BUTTERSCROLL_TAG: i64 = 0x6273_6372_6f6c_6c21; // "bscroll!"
 
 /// Far-future fire date that parks the animation timer.
 const PARKED: CFAbsoluteTime = 1.0e12;
@@ -42,8 +42,8 @@ fn with_tap<R>(f: impl FnOnce(&mut Tap) -> R) -> Option<R> {
     TAP.with(|cell| cell.try_borrow_mut().ok()?.as_mut().map(f))
 }
 
-/// Asks macOS to show its permission dialog if mfx has no access yet. On macOS
-/// 27.3 and later this lists mfx under System & App Protection Override.
+/// Asks macOS to show its permission dialog if butterscroll has no access yet. On macOS
+/// 27.3 and later this lists butterscroll under System & App Protection Override.
 pub fn request_access() {
     unsafe {
         let keys = [kAXTrustedCheckOptionPrompt as CFTypeRef];
@@ -158,12 +158,12 @@ extern "C" fn tap_callback(_proxy: *mut c_void, ty: CGEventType, event: CGEventR
 unsafe fn handle_event(tap: &mut Tap, ty: CGEventType, event: CGEventRef) -> CGEventRef {
     if ty == kCGEventTapDisabledByTimeout || ty == kCGEventTapDisabledByUserInput {
         if tap.enabled {
-            eprintln!("mfx: event tap was disabled by macOS (type {ty:#x}); re-enabling");
+            eprintln!("butterscroll: event tap was disabled by macOS (type {ty:#x}); re-enabling");
             CGEventTapEnable(tap.port, true);
         }
         return event;
     }
-    if CGEventGetIntegerValueField(event, kCGEventSourceUserData) == MFX_TAG {
+    if CGEventGetIntegerValueField(event, kCGEventSourceUserData) == BUTTERSCROLL_TAG {
         return event;
     }
 
@@ -190,7 +190,7 @@ unsafe fn handle_event(tap: &mut Tap, ty: CGEventType, event: CGEventRef) -> CGE
     let was_animating = tap.engine.is_animating();
     let outcome = tap.engine.handle(input, Instant::now());
     if tap.debug && (outcome.verdict != Verdict::Pass || !outcome.effects.is_empty()) {
-        eprintln!("mfx: {input:?} -> {:?} {:?}", outcome.verdict, outcome.effects);
+        eprintln!("butterscroll: {input:?} -> {:?} {:?}", outcome.verdict, outcome.effects);
     }
     for effect in &outcome.effects {
         post(effect);
@@ -277,7 +277,7 @@ unsafe fn post_tagged(ev: CGEventRef) {
     if ev.is_null() {
         return;
     }
-    CGEventSetIntegerValueField(ev, kCGEventSourceUserData, MFX_TAG);
+    CGEventSetIntegerValueField(ev, kCGEventSourceUserData, BUTTERSCROLL_TAG);
     CGEventPost(kCGHIDEventTap, ev);
     CFRelease(ev);
 }

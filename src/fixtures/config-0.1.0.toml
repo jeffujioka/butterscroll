@@ -1,0 +1,48 @@
+# mfx configuration. Location: ~/.config/mfx/config.toml (or $XDG_CONFIG_HOME/mfx/config.toml).
+# mfx reloads this file automatically when it changes.
+#
+# Actions: "none", "passthrough" (original click), "back", "forward", "mission-control",
+# "app-expose", "space-left", "space-right", "show-desktop", or { shortcut = "cmd+shift+4" }.
+# Named actions send the macOS default keyboard shortcuts (System Settings > Keyboard >
+# Keyboard Shortcuts); keep those enabled.
+
+[scroll]
+smooth = true          # animate mouse-wheel notches (trackpads / Magic Mouse are never touched)
+invert = false         # reverse mouse-wheel direction relative to the system setting
+step_px = 60           # pixels per notch
+duration_ms = 250      # animation length
+acceleration = true    # fast consecutive notches scroll further
+accel_window_ms = 90
+accel_per_notch = 0.3
+accel_max = 5
+
+[drag]
+click_slop_px = 4           # move less than this while holding = still a click
+gesture_threshold_px = 40   # drag this far to fire a gesture
+scroll_speed = 1.0          # drag-to-scroll speed
+scroll_invert = false       # false: content follows the hand, like a trackpad
+
+# Buttons are numbered like Mac Mouse Fix: 3 = middle, 4 = back, 5 = forward.
+# drag = "none" | "scroll" | "gestures"
+
+[buttons.3]
+click = "passthrough"
+drag = "scroll"
+
+[buttons.4]
+click = "back"
+drag = "gestures"
+[buttons.4.gestures]
+up = "mission-control"
+down = "app-expose"
+left = "space-right"
+right = "space-left"
+
+[buttons.5]
+click = "forward"
+drag = "gestures"
+[buttons.5.gestures]
+up = "mission-control"
+down = "app-expose"
+left = "space-right"
+right = "space-left"

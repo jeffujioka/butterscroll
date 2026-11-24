@@ -1,0 +1,98 @@
+# Builds a Draft release for every pushed v* tag. Maintainer guide: RELEASING.md.
+#
+# build:        no secrets; tests and builds both architectures, assembles an unsigned mfx.app.
+# sign-publish: holds the signing certificate (environment "release", needs maintainer approval);
+#               never runs cargo; signs, zips, verifies, creates/updates the Draft.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions: {}
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: macos-26
+    permissions:
+      contents: read
+    env:
+      MFX_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Build, test and assemble
+        run: scripts/release.sh build
+
+      # upload-artifact drops file modes and symlinks; a tar keeps the bundle intact.
+      - name: Pack unsigned bundle
+        run: tar -cf dist.tar -C dist mfx.app notes.md
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: unsigned
+          path: dist.tar
+          if-no-files-found: error
+          retention-days: 7
+
+  sign-publish:
+    needs: build
+    runs-on: macos-26
+    environment: release
+    permissions:
+      contents: write
+    env:
+      MFX_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: unsigned
+
+      - name: Unpack unsigned bundle
+        run: mkdir -p dist && tar -xf dist.tar -C dist
+
+      - name: Import signing certificate into a temporary keychain
+        env:
+          MFX_CERT_P12: ${{ secrets.MFX_CERT_P12 }}
+          MFX_CERT_PASSWORD: ${{ secrets.MFX_CERT_PASSWORD }}
+        run: |
+          keychain="$RUNNER_TEMP/mfx-signing.keychain-db"
+          p12="$RUNNER_TEMP/mfx-signing.p12"
+          kc_password=$(openssl rand -hex 32)
+          printf '%s' "$MFX_CERT_P12" | base64 --decode > "$p12"
+          security create-keychain -p "$kc_password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$kc_password" "$keychain"
+          security import "$p12" -k "$keychain" -P "$MFX_CERT_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$kc_password" "$keychain" > /dev/null
+          rm -f "$p12"
+
+      - name: Sign, zip and verify
+        env:
+          MFX_SIGN_ID: ${{ vars.MFX_SIGN_ID }}
+          MFX_KEYCHAIN: ${{ runner.temp }}/mfx-signing.keychain-db
+        run: scripts/release.sh package
+
+      - name: Create or update the Draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: scripts/release.sh publish
+
+      - name: Remove signing material
+        if: always()
+        run: |
+          security delete-keychain "$RUNNER_TEMP/mfx-signing.keychain-db" 2> /dev/null || true
+          rm -f "$RUNNER_TEMP/mfx-signing.p12"

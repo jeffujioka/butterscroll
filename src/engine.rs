@@ -28,7 +28,7 @@ pub enum Verdict {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScrollPhase {
-    /// Plain continuous scroll (smoothed wheel).
+    /// Plain continuous scroll, outside any gesture (smoothed horizontal wheel).
     None,
     Began,
     Changed,
@@ -84,15 +84,17 @@ pub struct Engine {
     anim: ScrollAnimator,
     /// Modifier flags of the latest wheel event, reused for animated frames.
     wheel_flags: u64,
+    /// A vertical wheel glide is open as a trackpad gesture; apps are waiting for its end.
+    gesture_open: bool,
 }
 
 impl Engine {
     pub fn new(cfg: Config) -> Self {
-        Engine { cfg, press: None, anim: ScrollAnimator::default(), wheel_flags: 0 }
+        Engine { cfg, press: None, anim: ScrollAnimator::default(), wheel_flags: 0, gesture_open: false }
     }
 
     pub fn is_animating(&self) -> bool {
-        self.anim.is_active()
+        self.anim.is_active() || self.gesture_open
     }
 
     pub fn handle(&mut self, input: Input, now: Instant) -> Outcome {
@@ -104,11 +106,40 @@ impl Engine {
         }
     }
 
-    /// Next animation frame of smooth scrolling.
-    pub fn frame(&mut self, now: Instant) -> Option<Effect> {
-        self.anim
-            .frame(now, &self.cfg.scroll)
-            .map(|px| Effect::Scroll { px, phase: ScrollPhase::None, flags: self.wheel_flags })
+    /// Next animation frame of smooth scrolling. A vertical glide is posted as one trackpad
+    /// gesture (began, changed, ended) so apps treat it like two fingers; a horizontal one
+    /// stays unphased, because a phased horizontal scroll can trigger swipe navigation.
+    pub fn frame(&mut self, now: Instant) -> Vec<Effect> {
+        let px = self.anim.frame(now, &self.cfg.scroll).unwrap_or([0, 0]);
+        let flags = self.wheel_flags;
+        let mut effects = Vec::new();
+        if px != [0, 0] {
+            let phase = if self.gesture_open {
+                ScrollPhase::Changed
+            } else if px[1] != 0 {
+                self.gesture_open = true;
+                ScrollPhase::Began
+            } else {
+                ScrollPhase::None
+            };
+            effects.push(Effect::Scroll { px, phase, flags });
+        }
+        if self.gesture_open && !self.anim.vertical_active() {
+            effects.extend(self.end_gesture());
+        }
+        effects
+    }
+
+    /// Stops any glide and returns the effect that ends an open gesture, so that a config
+    /// reload or a pause never leaves an app waiting for the end of a scroll.
+    pub fn stop_scrolling(&mut self) -> Vec<Effect> {
+        self.anim = ScrollAnimator::default();
+        self.end_gesture().into_iter().collect()
+    }
+
+    fn end_gesture(&mut self) -> Option<Effect> {
+        std::mem::take(&mut self.gesture_open)
+            .then_some(Effect::Scroll { px: [0, 0], phase: ScrollPhase::Ended, flags: self.wheel_flags })
     }
 
     fn binding(&self, button: u32) -> Option<&ButtonBinding> {
@@ -412,7 +443,67 @@ mod tests {
         let fx = animate(&mut e, t);
         assert!(fx.len() > 5, "should take several frames");
         assert_eq!(total_px(&fx), [0, -60]);
-        assert!(fx.iter().all(|f| matches!(f, Effect::Scroll { phase: ScrollPhase::None, flags: FLAG_COMMAND, .. })));
+        assert!(fx.iter().all(|f| matches!(f, Effect::Scroll { flags: FLAG_COMMAND, .. })));
+    }
+
+    fn phases(fx: &[Effect]) -> Vec<ScrollPhase> {
+        fx.iter()
+            .filter_map(|f| match f {
+                Effect::Scroll { phase, .. } => Some(*phase),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn vertical_wheel_glide_is_one_trackpad_gesture() {
+        let mut e = engine();
+        let t = Instant::now();
+        e.handle(wheel([0, -1], 0), t);
+        let phases = phases(&animate(&mut e, t));
+        assert_eq!(phases.first(), Some(&ScrollPhase::Began));
+        assert_eq!(phases.last(), Some(&ScrollPhase::Ended));
+        assert!(phases[1..phases.len() - 1].iter().all(|p| *p == ScrollPhase::Changed));
+        assert_eq!(phases.iter().filter(|p| **p == ScrollPhase::Began).count(), 1);
+    }
+
+    #[test]
+    fn the_gesture_stays_open_while_notches_keep_coming() {
+        let mut e = engine();
+        let t = Instant::now();
+        e.handle(wheel([0, -1], 0), t);
+        let mut fx = Vec::new();
+        for i in 1..=10 {
+            fx.extend(e.frame(t + FRAME * i));
+        }
+        e.handle(wheel([0, -1], 0), t + FRAME * 10);
+        fx.extend(animate(&mut e, t + FRAME * 10));
+        let phases = phases(&fx);
+        assert_eq!(phases.iter().filter(|p| **p == ScrollPhase::Began).count(), 1);
+        assert_eq!(phases.iter().filter(|p| **p == ScrollPhase::Ended).count(), 1);
+    }
+
+    #[test]
+    fn stopping_mid_glide_ends_the_open_gesture() {
+        let mut e = engine();
+        let t = Instant::now();
+        e.handle(wheel([0, -1], 0), t);
+        let mut fx = Vec::new();
+        for i in 1..=10 {
+            fx.extend(e.frame(t + FRAME * i));
+        }
+        fx.extend(e.stop_scrolling());
+        assert_eq!(phases(&fx).last(), Some(&ScrollPhase::Ended));
+        assert!(!e.is_animating());
+        assert!(e.stop_scrolling().is_empty(), "the gesture ends only once");
+    }
+
+    #[test]
+    fn horizontal_wheel_glide_stays_unphased() {
+        let mut e = engine();
+        let t = Instant::now();
+        e.handle(wheel([0, -1], FLAG_SHIFT), t);
+        assert!(phases(&animate(&mut e, t)).iter().all(|p| *p == ScrollPhase::None));
     }
 
     #[test]

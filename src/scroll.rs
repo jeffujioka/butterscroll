@@ -71,11 +71,7 @@ impl ScrollAnimator {
         self.streak = if continues { self.streak + 1 } else { 0 };
         self.last_notch = Some((axis, sign, now));
 
-        let multiplier = if cfg.acceleration {
-            (1.0 + cfg.accel_per_notch * self.streak as f64).min(cfg.accel_max)
-        } else {
-            1.0
-        };
+        let multiplier = if cfg.acceleration { multiplier(cfg.accel_per_notch, cfg.accel_max, self.streak) } else { 1.0 };
         if !self.is_active() {
             self.last_frame = None;
         }
@@ -124,6 +120,11 @@ impl ScrollAnimator {
         }
         (out != [0, 0]).then_some(out)
     }
+}
+
+/// Distance multiplier of a notch that follows `streak` fast notches.
+pub fn multiplier(per_notch: f64, max: f64, streak: u32) -> f64 {
+    (1.0 + per_notch * f64::from(streak)).min(max)
 }
 
 #[cfg(test)]

@@ -21,6 +21,7 @@ use crate::config::{
     NAMED_ACTIONS,
 };
 use crate::keys::Shortcut;
+use crate::scroll::multiplier;
 
 /// San Francisco, the macOS system font (a variable font since Catalina).
 const SYSTEM_FONT: &str = "/System/Library/Fonts/SFNS.ttf";
@@ -32,6 +33,12 @@ const ROW_HEIGHT_WITH_HELP: f32 = 48.0;
 const CONTROL_WIDTH: f32 = 200.0;
 const SLIDER_WIDTH: f32 = 150.0;
 const VALUE_WIDTH: f32 = 64.0;
+const SLIDER_HEIGHT: f32 = 44.0;
+/// Space between a row's text and its controls.
+const LABEL_GAP: f32 = 12.0;
+const INFO_WIDTH: f32 = 280.0;
+const TRY_IT_HEIGHT: f32 = 160.0;
+const TRY_IT_ROW_HEIGHT: f32 = 22.0;
 
 pub fn run(path: PathBuf) -> Result<(), String> {
     // Held while the window is open: a second `mfx settings` does nothing.
@@ -259,18 +266,37 @@ fn save(path: &Path, file: &ConfigFile) -> Result<(), String> {
 fn scroll_pane(ui: &mut Ui, file: &mut ConfigFile) {
     let s = &mut file.scroll;
     card(ui, |ui| {
-        toggle_row(ui, "Smooth scrolling", Some("Animate each notch of the wheel."), &mut s.smooth);
+        toggle_row(ui, "Smooth scrolling", Some("Each notch of the wheel glides instead of jumping."), &mut s.smooth);
         divider(ui);
-        toggle_row(ui, "Reverse direction", Some("Opposite of the system scroll direction."), &mut s.invert);
+        toggle_row(ui, "Reverse direction", Some("Scroll the opposite way from the system scroll direction."), &mut s.invert);
     });
     footnote(ui, "Applies to notched mouse wheels only. Trackpads and Magic Mouse are never changed.");
 
     ui.add_enabled_ui(s.smooth, |ui| {
         section(ui, "Animation");
         card(ui, |ui| {
-            number_row(ui, "Distance per notch", None, &mut s.step_px, 10.0..=200.0, 1.0, " px");
+            number_row(
+                ui,
+                "Distance per notch",
+                Some("How far one notch scrolls before acceleration."),
+                None,
+                &mut s.step_px,
+                Scale { range: 10.0..=200.0, step: 1.0, unit: " px", ends: ["Less", "More"] },
+            );
             divider(ui);
-            number_row(ui, "Duration", None, &mut s.duration_ms, 50.0..=800.0, 5.0, " ms");
+            let info = format!(
+                "A notch eases in, reaches its top speed, then glides to a stop, like a trackpad flick. It has \
+                 covered nearly all its distance after {} ms. Turning the wheel again mid-glide blends into the same glide.",
+                num(s.duration_ms),
+            );
+            number_row(
+                ui,
+                "Duration",
+                Some("How long each notch keeps gliding."),
+                Some(&info),
+                &mut s.duration_ms,
+                Scale { range: 50.0..=800.0, step: 5.0, unit: " ms", ends: ["Snappy", "Smooth"] },
+            );
         });
 
         section(ui, "Acceleration");
@@ -278,22 +304,100 @@ fn scroll_pane(ui: &mut Ui, file: &mut ConfigFile) {
             toggle_row(ui, "Accelerate fast scrolling", Some("Quick consecutive notches scroll further."), &mut s.acceleration);
             ui.add_enabled_ui(s.acceleration, |ui| {
                 divider(ui);
-                number_row(ui, "Boost per fast notch", None, &mut s.accel_per_notch, 0.0..=1.0, 0.05, "×");
+                let fifth = multiplier(s.accel_per_notch, s.accel_max, 4);
+                let info = format!(
+                    "Each notch in a fast streak adds {}× to the multiplier of the one before, up to the maximum \
+                     multiplier. With these settings, notch 5 of a streak scrolls {}× as far: {} px instead of {} px.",
+                    num(s.accel_per_notch),
+                    num(fifth),
+                    num((fifth * s.step_px).round()),
+                    num(s.step_px),
+                );
+                number_row(
+                    ui,
+                    "Boost per fast notch",
+                    Some("How much further each quick notch scrolls than the one before."),
+                    Some(&info),
+                    &mut s.accel_per_notch,
+                    Scale { range: 0.0..=1.0, step: 0.05, unit: "×", ends: ["Gentle", "Strong"] },
+                );
                 divider(ui);
-                number_row(ui, "Maximum multiplier", None, &mut s.accel_max, 1.0..=10.0, 0.5, "×");
+                let info = match peak_notch(s.accel_per_notch, s.accel_max) {
+                    Some(1) => format!("At 1×, a fast streak never scrolls further than {} px per notch.", num(s.step_px)),
+                    Some(n) => format!(
+                        "A fast streak stops speeding up here. With these settings it reaches {}× at notch {n}, \
+                         then scrolls {} px per notch.",
+                        num(s.accel_max),
+                        num((s.accel_max * s.step_px).round()),
+                    ),
+                    None => format!(
+                        "With Boost per fast notch at {}×, a fast streak never gets this far.",
+                        num(s.accel_per_notch)
+                    ),
+                };
+                number_row(
+                    ui,
+                    "Maximum multiplier",
+                    Some("The furthest a fast streak can push one notch."),
+                    Some(&info),
+                    &mut s.accel_max,
+                    Scale { range: 1.0..=10.0, step: 0.5, unit: "×", ends: ["Lower", "Higher"] },
+                );
                 divider(ui);
+                let info = format!(
+                    "A streak starts when notches come less than {} ms apart, and ends at the first slower notch or \
+                     a change of direction. A longer window lets a gentler turn of the wheel accelerate.",
+                    num(s.accel_window_ms),
+                );
                 number_row(
                     ui,
                     "Fast-notch window",
                     Some("Notches closer together than this count as fast."),
+                    Some(&info),
                     &mut s.accel_window_ms,
-                    20.0..=300.0,
-                    5.0,
-                    " ms",
+                    Scale { range: 20.0..=300.0, step: 5.0, unit: " ms", ends: ["Strict", "Loose"] },
                 );
             });
         });
     });
+
+    section(ui, "Try It");
+    card(ui, try_it);
+    footnote(ui, "Scroll this list with your mouse wheel after a change. It scrolls with these settings while mfx is running.");
+}
+
+/// The notch of a fast streak, counted from 1, whose multiplier first reaches `max`;
+/// `None` when the boost is too small to get there.
+fn peak_notch(per_notch: f64, max: f64) -> Option<u32> {
+    (0..10_000).find(|&streak| multiplier(per_notch, max, streak) >= max).map(|streak| streak + 1)
+}
+
+/// `0.30` → `"0.3"`, `60.0` → `"60"`.
+fn num(v: f64) -> String {
+    format!("{v:.2}").trim_end_matches('0').trim_end_matches('.').to_string()
+}
+
+/// Rows to scroll with the wheel. The running app smooths this window's scrolling too,
+/// so a change is felt as soon as it is saved.
+fn try_it(ui: &mut Ui) {
+    // The window color against the card: macOS's alternating list rows, in both themes.
+    let stripe = Palette::of(ui).window;
+    let text = ui.visuals().text_color();
+    let font = TextStyle::Body.resolve(ui.style());
+    egui::ScrollArea::vertical()
+        .id_salt("try it")
+        .min_scrolled_height(TRY_IT_HEIGHT)
+        .max_height(TRY_IT_HEIGHT)
+        .auto_shrink(false)
+        .show(ui, |ui| {
+            for n in 1..=100 {
+                let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), TRY_IT_ROW_HEIGHT), Sense::hover());
+                if n % 2 == 0 {
+                    ui.painter().rect_filled(rect, 4.0, stripe);
+                }
+                ui.painter().text(rect.left_center() + vec2(6.0, 0.0), Align2::LEFT_CENTER, format!("Row {n}"), font.clone(), text);
+            }
+        });
 }
 
 fn drag_pane(ui: &mut Ui, file: &mut ConfigFile) {
@@ -303,26 +407,31 @@ fn drag_pane(ui: &mut Ui, file: &mut ConfigFile) {
             ui,
             "Click tolerance",
             Some("Moving less than this while holding is still a click."),
+            None,
             &mut d.click_slop_px,
-            1.0..=20.0,
-            0.5,
-            " px",
+            Scale { range: 1.0..=20.0, step: 0.5, unit: " px", ends: ["Precise", "Forgiving"] },
         );
         divider(ui);
         number_row(
             ui,
             "Gesture distance",
             Some("Drag this far in one direction to fire a gesture."),
+            None,
             &mut d.gesture_threshold_px,
-            10.0..=200.0,
-            1.0,
-            " px",
+            Scale { range: 10.0..=200.0, step: 1.0, unit: " px", ends: ["Short", "Long"] },
         );
     });
 
     section(ui, "Drag to Scroll");
     card(ui, |ui| {
-        number_row(ui, "Speed", None, &mut d.scroll_speed, 0.1..=5.0, 0.1, "×");
+        number_row(
+            ui,
+            "Speed",
+            Some("How far the content moves compared with your hand."),
+            None,
+            &mut d.scroll_speed,
+            Scale { range: 0.1..=5.0, step: 0.1, unit: "×", ends: ["Slow", "Fast"] },
+        );
         divider(ui);
         toggle_row(
             ui,
@@ -398,7 +507,7 @@ fn buttons_pane(ui: &mut Ui, file: &mut ConfigFile) {
 }
 
 fn button_editor(ui: &mut Ui, key: &str, button: &mut ButtonFile) {
-    action_rows(ui, "Click", (key, "click"), &mut button.click, "passthrough");
+    action_rows(ui, "Click", Some("What one press of this button does."), (key, "click"), &mut button.click, "passthrough");
     divider(ui);
 
     let current = button.drag.clone().unwrap_or_else(|| "none".into());
@@ -420,7 +529,7 @@ fn button_editor(ui: &mut Ui, key: &str, button: &mut ButtonFile) {
     if let Some(g) = &mut button.gestures {
         for (dir, slot) in [("Drag up", &mut g.up), ("Drag down", &mut g.down), ("Drag left", &mut g.left), ("Drag right", &mut g.right)] {
             divider(ui);
-            action_rows(ui, dir, (key, dir), slot, "none");
+            action_rows(ui, dir, None, (key, dir), slot, "none");
         }
     }
 }
@@ -442,8 +551,15 @@ fn drag_help(mode: &str) -> &'static str {
 }
 
 /// The action combo, plus a shortcut field row when "Key shortcut…" is chosen.
-fn action_rows(ui: &mut Ui, label: &str, id: impl egui::AsIdSalt + Copy, slot: &mut Option<ActionFile>, default: &str) {
-    row(ui, label, None, |ui| action_combo(ui, id, slot, default));
+fn action_rows(
+    ui: &mut Ui,
+    label: &str,
+    help_text: Option<&str>,
+    id: impl egui::AsIdSalt + Copy,
+    slot: &mut Option<ActionFile>,
+    default: &str,
+) {
+    row(ui, label, help_text.map(help), |ui| action_combo(ui, id, slot, default));
     if let Some(ActionFile::Shortcut { shortcut }) = slot {
         divider(ui);
         let note = match Shortcut::parse(shortcut) {
@@ -559,27 +675,43 @@ fn help(text: &str) -> RichText {
     RichText::new(text).small().weak()
 }
 
-/// One form row: label (and optional help line) on the left, controls right-aligned.
-/// Controls are added right to left, so the first one added sits at the right edge.
+/// One form row: label and optional help on the left, controls right-aligned and
+/// vertically centered. Controls are added right to left, so the first one added sits
+/// at the right edge. The help wraps in the room the controls leave; their width is
+/// known only once they are laid out, so the row keeps it from the previous frame.
 fn row(ui: &mut Ui, label: &str, help: Option<RichText>, controls: impl FnOnce(&mut Ui)) {
-    let height = if help.is_some() { ROW_HEIGHT_WITH_HELP } else { ROW_HEIGHT };
-    let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), height), Sense::hover());
+    let id = ui.next_auto_id().with("controls width");
+    let width = ui.available_width();
+    let controls_width = ui.data(|d| d.get_temp::<f32>(id)).unwrap_or(CONTROL_WIDTH);
+    let help = help.map(|h| {
+        let wrap_width = (width - controls_width - LABEL_GAP).max(1.0);
+        egui::WidgetText::from(h).into_galley(ui, Some(egui::TextWrapMode::Wrap), wrap_width, TextStyle::Small)
+    });
+
+    let line_gap = 1.0;
+    let body = ui.text_style_height(&TextStyle::Body);
+    let text_height = help.as_ref().map_or(body, |g| body + line_gap + g.size().y);
+    // Rows with help keep the padding that one line of help gets in ROW_HEIGHT_WITH_HELP.
+    let padding = ROW_HEIGHT_WITH_HELP - (body + line_gap + ui.text_style_height(&TextStyle::Small));
+    let height = if help.is_some() { ROW_HEIGHT_WITH_HELP.max(text_height + padding) } else { ROW_HEIGHT };
+
+    let (rect, _) = ui.allocate_exact_size(vec2(width, height), Sense::hover());
     let mut right = ui.new_child(UiBuilder::new().max_rect(rect).layout(Layout::right_to_left(Align::Center)));
     controls(&mut right);
     let controls_left = right.min_rect().left();
-
-    let line_gap = 1.0;
-    let mut text_height = ui.text_style_height(&TextStyle::Body);
-    if help.is_some() {
-        text_height += line_gap + ui.text_style_height(&TextStyle::Small);
+    let measured = rect.right() - controls_left;
+    if (measured - controls_width).abs() > 0.5 {
+        ui.data_mut(|d| d.insert_temp(id, measured));
+        ui.ctx().request_discard("form row controls changed width");
     }
+
     let top = rect.top() + ((height - text_height) / 2.0).max(0.0);
-    let label_rect = Rect::from_min_max(pos2(rect.left(), top), pos2(controls_left - 12.0, rect.bottom()));
+    let label_rect = Rect::from_min_max(pos2(rect.left(), top), pos2(controls_left - LABEL_GAP, rect.bottom()));
     let mut left = ui.new_child(UiBuilder::new().max_rect(label_rect).layout(Layout::top_down(Align::Min)));
     left.spacing_mut().item_spacing.y = line_gap;
     left.add(egui::Label::new(label).truncate());
     if let Some(help) = help {
-        left.add(egui::Label::new(help).truncate());
+        left.add(egui::Label::new(help));
     }
 }
 
@@ -589,25 +721,47 @@ fn toggle_row(ui: &mut Ui, label: &str, help_text: Option<&str>, on: &mut bool) 
     });
 }
 
-fn number_row(
-    ui: &mut Ui,
-    label: &str,
-    help_text: Option<&str>,
-    value: &mut f64,
+/// A slider's range, step and unit, and what its two ends mean, like "Slow" and "Fast"
+/// under Tracking speed in System Settings.
+struct Scale {
     range: RangeInclusive<f64>,
     step: f64,
-    unit: &str,
-) {
+    unit: &'static str,
+    ends: [&'static str; 2],
+}
+
+/// A value field and a slider; `info` adds an ⓘ button that opens it in a popover.
+fn number_row(ui: &mut Ui, label: &str, help_text: Option<&str>, info: Option<&str>, value: &mut f64, scale: Scale) {
     row(ui, label, help_text.map(help), |ui| {
         let field = egui::DragValue::new(value)
-            .range(range.clone())
+            .range(scale.range.clone())
             .clamp_existing_to_range(false)
-            .speed(step)
+            .speed(scale.step)
             .max_decimals(2)
-            .suffix(unit);
+            .suffix(scale.unit);
         ui.add_sized([VALUE_WIDTH, 22.0], field);
-        slider(ui, value, range, step);
+        slider(ui, value, &scale);
+        if let Some(info) = info {
+            info_button(ui, info);
+        }
     });
+}
+
+/// An ⓘ button, like those in System Settings ▸ General ▸ Sharing, that opens a popover
+/// with a longer explanation.
+fn info_button(ui: &mut Ui, text: &str) {
+    let (rect, resp) = ui.allocate_exact_size(vec2(18.0, 18.0), Sense::click());
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), "More information"));
+    if ui.is_rect_visible(rect) {
+        let color = if resp.hovered() { ui.visuals().text_color() } else { ui.visuals().weak_text_color() };
+        let painter = ui.painter();
+        painter.circle_stroke(rect.center(), 7.5, Stroke::new(1.2, color));
+        painter.text(rect.center(), Align2::CENTER_CENTER, "i", FontId::new(11.0, semibold()), color);
+    }
+    egui::Popup::from_toggle_button_response(&resp)
+        .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+        .width(INFO_WIDTH)
+        .show(|ui| ui.label(text));
 }
 
 /// macOS-style switch.
@@ -630,13 +784,16 @@ fn toggle(ui: &mut Ui, on: &mut bool) -> Response {
     resp
 }
 
-/// macOS-style slider: thin track filled with the accent up to a round knob.
-/// Values outside `range` (hand-edited file) are left alone until dragged.
-fn slider(ui: &mut Ui, value: &mut f64, range: RangeInclusive<f64>, step: f64) -> Response {
+/// macOS-style slider: thin track filled with the accent up to a round knob, with what
+/// each end means written under it. Values outside the range (hand-edited file) are
+/// left alone until dragged.
+fn slider(ui: &mut Ui, value: &mut f64, scale: &Scale) -> Response {
     let p = Palette::of(ui);
     let knob_radius = 8.0;
-    let (rect, mut resp) = ui.allocate_exact_size(vec2(SLIDER_WIDTH, 20.0), Sense::click_and_drag());
-    let (lo, hi) = (*range.start(), *range.end());
+    // Taller than the knob so the end labels fit below while the track stays centered.
+    let (rect, mut resp) = ui.allocate_exact_size(vec2(SLIDER_WIDTH, SLIDER_HEIGHT), Sense::click_and_drag());
+    let (lo, hi) = (*scale.range.start(), *scale.range.end());
+    let step = scale.step;
     let track = (rect.left() + knob_radius)..=(rect.right() - knob_radius);
     let snap = |v: f64| (((v / step).round() * step * 1e9).round() / 1e9).clamp(lo, hi);
 
@@ -669,6 +826,10 @@ fn slider(ui: &mut Ui, value: &mut f64, range: RangeInclusive<f64>, step: f64) -
         painter.rect_filled(Rect::from_min_max(rail.min, pos2(knob.x, rail.max.y)), 2.0, p.accent);
         painter.circle_filled(knob + vec2(0.0, 0.5), knob_radius + 0.5, Color32::from_black_alpha(40));
         painter.circle(knob, knob_radius, p.knob, Stroke::new(0.5, p.knob_stroke));
+        let font = TextStyle::Small.resolve(ui.style());
+        let weak = ui.visuals().weak_text_color();
+        painter.text(rect.left_bottom(), Align2::LEFT_BOTTOM, scale.ends[0], font.clone(), weak);
+        painter.text(rect.right_bottom(), Align2::RIGHT_BOTTOM, scale.ends[1], font, weak);
     }
     resp
 }
@@ -876,5 +1037,54 @@ fn apply_style(style: &mut egui::Style, p: &Palette) {
         state.fg_stroke = Stroke::new(1.0, p.text);
         state.corner_radius = CornerRadius::same(6);
         state.expansion = 0.0;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn peak_notch_is_where_a_fast_streak_hits_the_maximum() {
+        // Defaults: 1 + 0.3 × 14 = 5.2, capped to 5 on the 15th notch.
+        assert_eq!(peak_notch(0.3, 5.0), Some(15));
+        assert_eq!(peak_notch(0.5, 3.0), Some(5));
+        assert_eq!(peak_notch(0.5, 1.0), Some(1));
+        // (1.3 - 1) / 0.1 is 3.0000000000000004 in floating point; the 4th notch still hits 1.3.
+        assert_eq!(peak_notch(0.1, 1.3), Some(4));
+    }
+
+    #[test]
+    fn no_peak_without_boost() {
+        assert_eq!(peak_notch(0.0, 5.0), None);
+    }
+
+    /// Height `row` takes for `help_text` beside 200 pt of controls in a 400 pt wide pane.
+    fn row_height(help_text: &str) -> f32 {
+        let ctx = egui::Context::default();
+        let input = || egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(400.0, 400.0))),
+            ..Default::default()
+        };
+        let mut height = 0.0;
+        // Two frames: the row lays out its help with the controls' width from the frame before.
+        for _ in 0..2 {
+            let _ = ctx.run_ui(input(), |ui| {
+                let top = ui.cursor().top();
+                row(ui, "Label", Some(help(help_text)), |ui| {
+                    ui.allocate_exact_size(vec2(200.0, 20.0), Sense::hover());
+                });
+                height = ui.min_rect().bottom() - top;
+            });
+        }
+        height
+    }
+
+    #[test]
+    fn long_help_wraps_and_grows_the_row_instead_of_being_cut() {
+        let one_line = row_height("Fits on one line.");
+        let long = row_height(&"A help text far longer than the room the controls leave beside it. ".repeat(3));
+        assert_eq!(one_line, ROW_HEIGHT_WITH_HELP);
+        assert!(long > one_line + 10.0, "long help {long} pt, one line {one_line} pt");
     }
 }

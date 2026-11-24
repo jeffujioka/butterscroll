@@ -112,6 +112,7 @@ pub fn install(cfg: Config, debug: bool) -> Result<(), String> {
 /// Swaps in a new config; any drag or scroll in progress is dropped.
 pub fn reload(cfg: Config) {
     with_tap(|tap| {
+        unsafe { post_all(&tap.engine.stop_scrolling()) };
         tap.engine = Engine::new(cfg.clone());
         tap.cfg = cfg;
     });
@@ -122,6 +123,7 @@ pub fn reload(cfg: Config) {
 pub fn set_enabled(enabled: bool) {
     with_tap(|tap| {
         tap.enabled = enabled;
+        unsafe { post_all(&tap.engine.stop_scrolling()) };
         tap.engine = Engine::new(tap.cfg.clone());
         unsafe { CGEventTapEnable(tap.port, enabled) };
     });
@@ -191,9 +193,7 @@ unsafe fn handle_event(tap: &mut Tap, ty: CGEventType, event: CGEventRef) -> CGE
 extern "C" fn timer_callback(timer: CFRunLoopTimerRef, _info: *mut c_void) {
     let _ = std::panic::catch_unwind(|| {
         with_tap(|tap| unsafe {
-            if let Some(effect) = tap.engine.frame(Instant::now()) {
-                post(&effect);
-            }
+            post_all(&tap.engine.frame(Instant::now()));
             if !tap.engine.is_animating() {
                 CFRunLoopTimerSetNextFireDate(timer, PARKED);
             }
@@ -207,6 +207,12 @@ unsafe fn invert_scroll(event: CGEventRef) {
     }
     for field in [kCGScrollWheelEventFixedPtDeltaAxis1, kCGScrollWheelEventFixedPtDeltaAxis2] {
         CGEventSetDoubleValueField(event, field, -CGEventGetDoubleValueField(event, field));
+    }
+}
+
+unsafe fn post_all(effects: &[Effect]) {
+    for effect in effects {
+        post(effect);
     }
 }
 

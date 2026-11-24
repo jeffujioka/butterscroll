@@ -25,7 +25,7 @@ pub struct ScrollConfig {
     pub invert: bool,
     /// Pixels scrolled per wheel notch before acceleration.
     pub step_px: f64,
-    /// Time for an animation to cover ~95% of its distance.
+    /// Time for an animation to cover ~99% of its distance.
     pub duration_ms: f64,
     pub acceleration: bool,
     /// Notches closer together than this count as one fast streak.

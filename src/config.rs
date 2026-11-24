@@ -356,7 +356,8 @@ mod tests {
         let cfg = Config::default();
         assert_eq!(cfg.buttons.keys().copied().collect::<Vec<_>>(), vec![2, 3, 4]);
         assert_eq!(cfg.buttons[&2].drag, DragMode::Scroll);
-        assert_eq!(cfg.buttons[&3].click, named_action("back").unwrap());
+        assert_eq!(cfg.buttons[&3].click, Action::Passthrough);
+        assert_eq!(cfg.buttons[&4].click, Action::Passthrough);
     }
 
     #[test]

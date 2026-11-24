@@ -1,9 +1,12 @@
 //! Smooth scrolling for notched mouse wheels.
 //!
 //! Each notch adds `step_px × acceleration` pixels to the distance still to travel.
-//! Every frame covers a fixed fraction of what remains (exponential ease-out), so a
-//! new notch mid-animation blends in without a jolt. Sub-pixel remainders carry
-//! over so the total emitted always equals the total requested.
+//! The content is pulled toward that target by a critically damped spring: it eases
+//! in, reaches its top speed, then glides to a stop, and its speed never jumps, so
+//! a new notch mid-glide blends in the way a trackpad flick does. The spring is
+//! integrated in closed form, so the motion depends on elapsed time, never on how
+//! evenly frames arrive. Sub-pixel remainders carry over so the total emitted
+//! always equals the total requested.
 
 use std::time::{Duration, Instant};
 
@@ -12,12 +15,19 @@ use crate::config::ScrollConfig;
 /// Frame interval the macOS layer drives `frame` at.
 pub const FRAME: Duration = Duration::from_micros(8_333);
 
-/// Fraction of the distance covered after `duration_ms` (e^-3 ≈ 5% left).
-const TAUS_PER_DURATION: f64 = 3.0;
+/// `omega × duration` at which a unit step is 99% covered: `(1 + x)·e^-x = 0.01`.
+const SETTLE_OMEGA_TAUS: f64 = 6.64;
+
+/// Below this much distance left and this speed (px/s) the glide snaps to its end.
+const SNAP_PX: f64 = 0.5;
+const SNAP_SPEED: f64 = 30.0;
 
 #[derive(Debug, Default)]
 pub struct ScrollAnimator {
+    /// Distance still to travel per axis.
     remaining: [f64; 2],
+    /// Current speed per axis in px/s, signed like `remaining`.
+    velocity: [f64; 2],
     carry: [f64; 2],
     last_frame: Option<Instant>,
     /// Axis, sign and time of the previous notch, for acceleration streaks.
@@ -27,7 +37,12 @@ pub struct ScrollAnimator {
 
 impl ScrollAnimator {
     pub fn is_active(&self) -> bool {
-        self.remaining != [0.0, 0.0] || self.carry.iter().any(|c| c.abs() >= 1.0)
+        self.remaining != [0.0, 0.0] || self.velocity != [0.0, 0.0] || self.carry.iter().any(|c| c.abs() >= 1.0)
+    }
+
+    /// Whether the vertical axis still has distance or speed left.
+    pub fn vertical_active(&self) -> bool {
+        self.remaining[1] != 0.0 || self.velocity[1] != 0.0 || self.carry[1].abs() >= 1.0
     }
 
     /// Queue wheel notches. `lines` is `[horizontal, vertical]`, positive = content moves
@@ -48,8 +63,9 @@ impl ScrollAnimator {
         };
         let same_direction = matches!(self.last_notch, Some((a, s, _)) if a == axis && s == sign);
         if !same_direction {
-            // Reversing must feel instant: drop what was still queued on that axis.
+            // Reversing must feel instant: drop what was still queued and stop dead.
             self.remaining = [0.0, 0.0];
+            self.velocity = [0.0, 0.0];
             self.carry = [0.0, 0.0];
         }
         self.streak = if continues { self.streak + 1 } else { 0 };
@@ -66,7 +82,7 @@ impl ScrollAnimator {
         self.remaining[axis] += amount as f64 * cfg.step_px * multiplier;
     }
 
-    // Indexing keeps the three per-axis arrays visibly in lockstep.
+    // Indexing keeps the per-axis arrays visibly in lockstep.
     #[allow(clippy::needless_range_loop)]
     /// Advance the animation to `now`; returns whole pixels `[dx, dy]` to post, if any.
     pub fn frame(&mut self, now: Instant, cfg: &ScrollConfig) -> Option<[i32; 2]> {
@@ -79,16 +95,21 @@ impl ScrollAnimator {
         };
         self.last_frame = Some(now);
 
-        let tau = cfg.duration_ms / 1000.0 / TAUS_PER_DURATION;
-        let fraction = 1.0 - (-dt.as_secs_f64() / tau).exp();
+        let omega = SETTLE_OMEGA_TAUS / (cfg.duration_ms / 1000.0);
+        let t = dt.as_secs_f64();
+        let decay = (-omega * t).exp();
         let mut out = [0i32; 2];
         for axis in 0..2 {
-            let mut step = self.remaining[axis] * fraction;
-            if (self.remaining[axis] - step).abs() < 0.5 {
-                step = self.remaining[axis];
+            let (r0, v0) = (self.remaining[axis], self.velocity[axis]);
+            let mut r = (r0 + (v0 + omega * r0) * t) * decay;
+            let mut v = (v0 - omega * (v0 + omega * r0) * t) * decay;
+            if r.abs() < SNAP_PX && v.abs() < SNAP_SPEED {
+                r = 0.0;
+                v = 0.0;
             }
-            self.remaining[axis] -= step;
-            self.carry[axis] += step;
+            self.remaining[axis] = r;
+            self.velocity[axis] = v;
+            self.carry[axis] += r0 - r;
             let whole = self.carry[axis].trunc();
             self.carry[axis] -= whole;
             out[axis] = whole as i32;
@@ -142,6 +163,49 @@ mod tests {
         assert_eq!(total(&frames), [0, -60]);
         assert!(frames.first().unwrap()[1].abs() >= frames.last().unwrap()[1].abs());
         assert!(elapsed <= Duration::from_millis(500), "took {elapsed:?}");
+    }
+
+    #[test]
+    fn a_notch_eases_in_instead_of_starting_at_full_speed() {
+        let cfg = cfg();
+        let mut anim = ScrollAnimator::default();
+        let t0 = Instant::now();
+        anim.add([0, 1], t0, &cfg);
+        let (frames, _) = drain(&mut anim, t0, &cfg);
+        let speeds: Vec<i32> = frames.iter().map(|f| f[1]).collect();
+        let peak = speeds.iter().copied().max().unwrap();
+        assert!(speeds[0] * 3 < peak, "first frame {} vs peak {peak}", speeds[0]);
+    }
+
+    #[test]
+    fn a_new_notch_mid_glide_does_not_jerk_the_speed() {
+        let cfg = cfg();
+        let t0 = Instant::now();
+        let mut anim = ScrollAnimator::default();
+        anim.add([0, 1], t0, &cfg);
+        let mut t = t0;
+        let mut last = 0;
+        for _ in 0..12 {
+            t += FRAME;
+            last = anim.frame(t, &cfg).map_or(0, |f| f[1]);
+        }
+        anim.add([0, 1], t, &cfg);
+        t += FRAME;
+        let next = anim.frame(t, &cfg).map_or(0, |f| f[1]);
+        assert!((next - last).abs() <= 2, "speed jumped from {last} to {next} px/frame");
+    }
+
+    #[test]
+    fn fractional_speed_never_stalls_or_overshoots_the_total() {
+        let mut cfg = cfg();
+        cfg.step_px = 7.0;
+        cfg.duration_ms = 800.0;
+        let mut anim = ScrollAnimator::default();
+        let t0 = Instant::now();
+        anim.add([0, 1], t0, &cfg);
+        let (frames, _) = drain(&mut anim, t0, &cfg);
+        assert_eq!(total(&frames), [0, 7]);
+        assert!(frames.iter().all(|f| f[1] >= 0), "never scrolls backwards: {frames:?}");
     }
 
     #[test]

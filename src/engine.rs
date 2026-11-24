@@ -281,7 +281,7 @@ mod tests {
         let mut e = engine();
         let out = run(&mut e, &[Input::ButtonDown { button: BACK }, Input::ButtonUp { button: BACK }]);
         assert!(out.iter().all(|o| o.verdict == Verdict::Swallow));
-        assert_eq!(effects(&out), vec![key("cmd+[")]);
+        assert_eq!(effects(&out), vec![Effect::Click { button: BACK }]);
     }
 
     #[test]
@@ -295,7 +295,7 @@ mod tests {
                 Input::ButtonUp { button: BACK },
             ],
         );
-        assert_eq!(effects(&out), vec![key("cmd+[")]);
+        assert_eq!(effects(&out), vec![Effect::Click { button: BACK }]);
     }
 
     #[test]
@@ -371,7 +371,7 @@ mod tests {
         );
         assert_eq!(out[1], Outcome::pass());
         assert_eq!(out[2], Outcome::pass());
-        assert_eq!(out[3].effects, vec![key("cmd+[")]);
+        assert_eq!(out[3].effects, vec![Effect::Click { button: BACK }]);
     }
 
     fn wheel(lines: [i64; 2], flags: u64) -> Input {

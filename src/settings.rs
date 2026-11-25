@@ -68,7 +68,7 @@ pub fn run(path: PathBuf) -> Result<(), String> {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title("butterscroll Settings")
-            .with_inner_size([760.0, 600.0])
+            .with_inner_size([760.0, 944.0])
             .with_min_inner_size([680.0, 420.0])
             .with_fullsize_content_view(true)
             .with_titlebar_shown(false)

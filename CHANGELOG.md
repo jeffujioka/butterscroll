@@ -32,3 +32,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Override: it waited for `AXIsProcessTrusted`, which ignores that grant. It now tries to
   create the event tap and judges by the result. `butterscroll check` does the same, and the
   messages and the menu item point to the right pane.
+- The settings window opened too short for Scrolling and hid the Try It list below the
+  fold. It now opens tall enough to show the whole pane, or as tall as the screen allows.

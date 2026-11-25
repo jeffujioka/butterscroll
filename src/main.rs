@@ -179,8 +179,8 @@ fn permission_hint() -> String {
     match std::env::var("TERM_PROGRAM") {
         Ok(term) if !term.is_empty() => format!(
             "butterscroll was started from a terminal ({term}), so macOS checks the terminal's permission, not butterscroll's. \
-             Either enable {term} under {PANE} and restart it, or start butterscroll through launchd (README → \
-             \"Start at login\") so the butterscroll entry applies."
+             Either enable {term} under {PANE} and restart it, or start butterscroll through launchd \
+             (docs/guide/install.md → \"Start at login\") so the butterscroll entry applies."
         ),
         _ => format!(
             "Enable butterscroll under {PANE}. After a rebuild with an ad-hoc signature, remove and re-add it."

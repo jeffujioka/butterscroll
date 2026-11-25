@@ -1,109 +1,196 @@
-# butterscroll
+<p align="center">
+  <img src="docs/assets/readme/hero.svg" alt="butterscroll: Scrolling, buttered. A mouse whose scroll wheel is a pat of butter." width="100%">
+</p>
 
-A small personal macOS mouse enhancer written in Rust. It covers the core of what
-Mac Mouse Fix does:
+<p align="center">
+  <img src="https://img.shields.io/badge/macOS-13%2B-3A220F?style=for-the-badge&logo=apple&logoColor=FFD54F" alt="macOS 13 or later">
+  <img src="https://img.shields.io/badge/Apple_silicon_%2B_Intel-native-3A220F?style=for-the-badge&labelColor=FFD54F&color=3A220F" alt="Native on Apple silicon and Intel">
+  <img src="https://img.shields.io/badge/price-free-3A220F?style=for-the-badge&labelColor=FFD54F&color=3A220F" alt="Free">
+  <img src="https://img.shields.io/badge/license-MIT-3A220F?style=for-the-badge&labelColor=FFD54F&color=3A220F" alt="MIT license">
+  <img src="https://img.shields.io/badge/made_with-Rust-3A220F?style=for-the-badge&logo=rust&logoColor=3A220F&labelColor=FFD54F&color=3A220F" alt="Made with Rust">
+</p>
 
-- **Button remapping**: buttons 3 and up (middle, back, forward, extra buttons) can send
-  back/forward, Mission Control, App Exposé, Spaces left/right, Show Desktop, or any key
-  combination.
-- **Smooth scrolling** for notched mouse wheels, with acceleration and optional reversed
-  direction. Trackpads and Magic Mouse are left untouched.
-- **Click and drag**: hold a button and drag to scroll like two fingers on a trackpad,
-  or to fire one action per direction (gestures).
+<h3 align="center">Your mouse wheel, minus the clunk.</h3>
 
-Mac Mouse Fix was used only as a behavior reference; no code was copied from it.
+<p align="center">
+  butterscroll is a tiny menu-bar app that gives any ordinary mouse the glide of a trackpad.<br>
+  Smooth scrolling, smarter buttons and click-and-drag gestures, in every app, for free.
+</p>
 
-## Build
+<p align="center">
+  <a href="#get-started"><b>Get started</b></a>
+  &emsp;
+  <a href="#what-it-does"><b>See what it does</b></a>
+  &emsp;
+  <a href="docs/"><b>Read the docs</b></a>
+</p>
 
-```sh
-./scripts/build.sh          # cargo build --release + ad-hoc code signing
-```
+<br>
 
-macOS ties the Accessibility permission to the binary's code signature. An ad-hoc
-signature changes on every build, so you have to grant the permission again after
-each rebuild. To keep it across rebuilds, create a code-signing certificate
-(Keychain Access → Certificate Assistant → Create a Certificate…, type "Code Signing")
-and build with it:
+<p align="center">
+  <img src="docs/assets/readme/demo.gif" alt="Animation: on the left, a page jumps one notch at a time. On the right, butterscroll glides through the same notches. Then a middle-button drag scrolls the page, and a back-button swipe opens Mission Control." width="100%">
+</p>
+<p align="center"><sub>An animated illustration, not a screen recording.</sub></p>
 
-```sh
-BUTTERSCROLL_SIGN_ID="butterscroll local" ./scripts/build.sh
-```
+## Why "butterscroll"?
 
-## Run
+A regular mouse wheel scrolls in chunks. Every notch moves the page a fixed step with a
+little *clunk*, and your eyes lose their place on each one. A trackpad glides.
 
-```sh
-target/release/butterscroll           # menu-bar app (add --debug to log every handled event)
-target/release/butterscroll check     # validates the config and reports whether macOS allows the event tap
-```
+butterscroll melts each notch into the next, so the page slides like a warm knife through
+butter. One smooth spread from top to bottom. Hence the name.
 
-butterscroll runs as a menu-bar icon (a mouse) with no Dock icon. The menu has:
+> Smooth as butter. Light as a pat. Spreads to every app.
 
-- **Enabled**: pause or resume all remapping and scrolling.
-- **Settings…**: opens the settings window.
-- **Open Config File** / **Reload Config**.
-- **Grant Access…**: shown while the permission is missing. butterscroll keeps retrying, so it
-  starts working as soon as you grant access.
-- **Quit butterscroll**.
+## What it does
 
-butterscroll needs **Input Monitoring** and permission to control the Mac:
+### Smooth as butter
 
-- macOS 27.3 and later: **System & App Protection Override** (System Settings → Privacy &
-  Security). The Accessibility pane there is only for assistive technologies and has no
-  `+`. In System & App Protection Override click `+`, press Cmd-Shift-G, enter the path
-  of the `butterscroll` binary, choose it and press Done. butterscroll starts without a restart.
-- Earlier macOS: **Accessibility** (Privacy & Security → Accessibility).
+Every notch of the wheel glides instead of jumping. Flick it fast and quick notches carry
+the page further, like momentum. Slow down and you get gentle, precise steps.
 
-When you run butterscroll from a terminal, macOS gives the permission to the terminal app. When
-launchd starts it, the permission goes to the `butterscroll` binary itself.
+- Tune how far a notch goes, how long it glides and how hard quick notches accelerate.
+- Reverse the wheel without touching your trackpad's direction.
+- Trackpads and Magic Mouse are never changed. butterscroll only touches notched wheels.
 
-### Start at login
+<p align="center">
+  <img src="docs/assets/readme/feat-scroll.png" alt="The Scrolling pane: smooth scrolling and reverse direction toggles, sliders for distance per notch and duration, and acceleration settings." width="80%">
+</p>
 
-```sh
-target/release/butterscroll launch-agent > ~/Library/LaunchAgents/com.jeffujioka.butterscroll.plist
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.jeffujioka.butterscroll.plist
-# stop: launchctl bootout gui/$(id -u)/com.jeffujioka.butterscroll
-```
+### Buttons that pull their weight
 
-Logs go to `~/Library/Logs/butterscroll.log`. launchd restarts butterscroll if it crashes. A failed
-start, such as a missing permission, is retried every 10 s.
+That middle click and those side buttons can do far more than sit there. Give any button
+from 3 up its own job:
 
-## Configure
+- Back and forward
+- Mission Control, App Exposé, Show Desktop
+- The next or previous Space
+- Any keyboard shortcut you like, such as `⌘⇧4` for a screenshot
 
-Use **Settings…** in the menu (or `butterscroll settings`). The window follows the system
-light/dark appearance and has three panes: Scrolling, Click and Drag, and Buttons.
-Changes are checked while you edit and saved automatically as soon as they are
-valid; there is no Save button. The running app reloads the file within a second.
+Back and forward keep their normal click out of the box, so your browser works exactly as
+before until you decide otherwise.
 
-You can also edit `~/.config/butterscroll/config.toml` by hand. Any change to the file is picked
-up automatically. If the file is invalid, the menu shows the error and butterscroll keeps
-the previous config. See [`src/default-config.toml`](src/default-config.toml) for every
-option. Saving from the settings window rewrites the file without its comments.
-Buttons are numbered like Mac Mouse Fix: 3 = middle, 4 = back, 5 = forward.
+<p align="center">
+  <img src="docs/assets/readme/feat-buttons.png" alt="The Buttons pane: button 3 scrolls when dragged, button 4 runs Mission Control, App Exposé and Space switching on drag gestures." width="80%">
+</p>
 
-The named actions send the macOS default keyboard shortcuts (Ctrl+↑ Mission Control,
-Ctrl+↓ App Exposé, Ctrl+←/→ Spaces, F11 Show Desktop). They only work while those
-shortcuts are enabled under System Settings → Keyboard → Keyboard Shortcuts.
+### Spread it around with click and drag
 
-## Design
+Hold a button and move the mouse:
 
-```
-src/engine.rs     pure state machine: Input events → Verdict (pass/swallow/invert) + Effects
-src/scroll.rs     wheel animator: per-notch distance × acceleration, critically damped spring (eases in, glides out)
-src/config.rs     TOML file model (ConfigFile), validation into Config
-src/keys.rs       "cmd+shift+4" → keycode + CG flags
-src/settings.rs   egui settings window (separate process, writes the TOML)
-src/macos/app.rs  menu-bar app: winit event loop, tray menu, config watcher
-src/macos/tap.rs  CGEventTap, event posting, reload/pause
-src/macos/ffi.rs  hand-written CoreGraphics/CoreFoundation FFI
-```
+- **Drag to scroll.** Hold the middle button and the page follows your hand, like two
+  fingers on a trackpad. Long documents, wide spreadsheets, maps and timelines become one
+  easy pull.
+- **Gestures.** Hold back or forward and swipe up, down, left or right to open Mission
+  Control or App Exposé, or to switch Spaces. One action per direction.
 
-All behavior lives in `engine`/`scroll` and is covered by `cargo test` without
-needing a mouse. The macOS layer only translates events in both directions. Events
-that butterscroll posts are tagged in `kCGEventSourceUserData` so its own tap lets them through.
+<p align="center">
+  <img src="docs/assets/readme/feat-drag.png" alt="The Click and Drag pane: click tolerance, gesture distance, drag-to-scroll speed and direction." width="80%">
+</p>
 
-Out of scope for now: per-app settings, double-click actions (they need a click
-delay), and Mac Mouse Fix's private-API trackpad gesture simulation.
+### Salted to taste
 
-## License
+The settings window looks and feels like System Settings, in light or dark appearance.
 
-MIT
+- Every setting tells you what it does, and the ⓘ buttons work through an example with
+  your own values.
+- A Try It list sits right under the scrolling settings, so you feel a change the moment
+  you make it.
+- No Save button. Changes apply within a second.
+- Prefer text? Everything lives in one plain config file, and edits to it apply on their
+  own.
+
+### Stays out of the way
+
+butterscroll lives in the menu bar, with no Dock icon, and you can pause it from there. If
+macOS still needs your permission, the menu tells you where to grant it, and butterscroll
+starts working the moment you do. No account, no tracking: it's a small native app,
+written in Rust, that runs on your Mac and nowhere else.
+
+## A peek inside
+
+<p align="center">
+  <img src="docs/assets/readme/showcase.png" alt="The three settings panes side by side: Click and Drag, Scrolling and Buttons." width="100%">
+</p>
+
+## Get started
+
+There is no published Release yet, so for now you build butterscroll yourself. With the
+[Rust toolchain](https://rustup.rs) installed, it takes a few minutes.
+
+1. **Build it.**
+
+   ```sh
+   git clone https://github.com/jeffujioka/butterscroll.git
+   cd butterscroll && ./scripts/build.sh
+   ```
+
+2. **Run it.**
+
+   ```sh
+   target/release/butterscroll
+   ```
+
+   A little mouse appears in your menu bar.
+
+3. **Let it in.** In System Settings → Privacy & Security, allow it under **Input
+   Monitoring** and **System & App Protection Override** (on macOS before 27.3:
+   **Accessibility**). Started from Terminal, the permission goes to your terminal app;
+   started at login, it goes to butterscroll itself. Your wheel turns to butter the moment
+   it's allowed.
+
+Want it on every login, or a build that keeps its permission across rebuilds? The
+[install guide](docs/guide/install.md) covers both.
+
+## Questions
+
+<details>
+<summary><b>Will it change how my trackpad or Magic Mouse scrolls?</b></summary>
+<br>
+No. butterscroll only smooths notched mouse wheels. Trackpads and Magic Mouse keep their
+own scrolling.
+</details>
+
+<details>
+<summary><b>Which mice work?</b></summary>
+<br>
+Any mouse with a notched scroll wheel. Button remapping and gestures work on buttons 3
+and up: middle, back, forward and any extra buttons. Left and right click are never
+changed.
+</details>
+
+<details>
+<summary><b>Mission Control or Spaces actions do nothing.</b></summary>
+<br>
+These actions send the standard macOS shortcuts. Make sure they are turned on under System
+Settings → Keyboard → Keyboard Shortcuts. See <a href="docs/guide/configure.md#actions">Actions</a>.
+</details>
+
+<details>
+<summary><b>butterscroll is running but nothing happens.</b></summary>
+<br>
+macOS hasn't granted it permission yet, or a rebuild changed its signature. The
+<a href="docs/troubleshooting/macos-27-3-permission.md">troubleshooting guide</a> walks
+you through it.
+</details>
+
+<details>
+<summary><b>Is it really free?</b></summary>
+<br>
+Yes. butterscroll is open source under the MIT license.
+</details>
+
+## Docs
+
+- [Install and run](docs/guide/install.md): build, permissions, Start at login, logs
+- [Configure](docs/guide/configure.md): the settings window, the config file and every action
+- [How it works](docs/development/architecture.md): the code layout and the design
+- [Troubleshooting](docs/troubleshooting/macos-27-3-permission.md): when butterscroll runs but does nothing
+- [Changelog](CHANGELOG.md) and [releasing](RELEASING.md)
+
+## Credits and license
+
+Inspired by the behavior of Mac Mouse Fix; no code was copied from it.
+butterscroll is released under the [MIT license](LICENSE).
+
+<p align="center"><sub>Made for everyone who misses their trackpad the moment they plug in a mouse.</sub></p>

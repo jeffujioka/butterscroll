@@ -103,7 +103,7 @@ The settings window looks and feels like System Settings, in light or dark appea
 ### Stays out of the way
 
 butterscroll lives in the menu bar, with no Dock icon, and you can pause it from there. If
-macOS still needs your permission, the menu tells you where to grant it, and butterscroll
+macOS still needs to give it Access, the menu tells you where to grant it, and butterscroll
 starts working the moment you do. No account, no tracking: it's a small native app,
 written in Rust, that runs on your Mac and nowhere else.
 
@@ -135,11 +135,11 @@ There is no published Release yet, so for now you build butterscroll yourself. W
 
 3. **Let it in.** In System Settings → Privacy & Security, allow it under **Input
    Monitoring** and **System & App Protection Override** (on macOS before 27.3:
-   **Accessibility**). Started from Terminal, the permission goes to your terminal app;
+   **Accessibility**). Started from Terminal, Access goes to your terminal app;
    started at login, it goes to butterscroll itself. Your wheel turns to butter the moment
    it's allowed.
 
-Want it on every login, or a build that keeps its permission across rebuilds? The
+Want it on every login, or a build that keeps its Access across rebuilds? The
 [install guide](docs/guide/install.md) covers both.
 
 ## Questions
@@ -169,7 +169,7 @@ Settings → Keyboard → Keyboard Shortcuts. See <a href="docs/guide/configure.
 <details>
 <summary><b>butterscroll is running but nothing happens.</b></summary>
 <br>
-macOS hasn't granted it permission yet, or a rebuild changed its signature. The
+macOS hasn't given it Access yet, or a rebuild changed its signature. The
 <a href="docs/troubleshooting/macos-27-3-permission.md">troubleshooting guide</a> walks
 you through it.
 </details>
@@ -182,7 +182,7 @@ Yes. butterscroll is open source under the MIT license.
 
 ## Docs
 
-- [Install and run](docs/guide/install.md): build, permissions, Start at login, logs
+- [Install and run](docs/guide/install.md): build, Access, Start at login, logs
 - [Configure](docs/guide/configure.md): the settings window, the config file and every action
 - [How it works](docs/development/architecture.md): the code layout and the design
 - [Troubleshooting](docs/troubleshooting/macos-27-3-permission.md): when butterscroll runs but does nothing

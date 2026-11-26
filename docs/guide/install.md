@@ -12,8 +12,8 @@ cd butterscroll
 ./scripts/build.sh          # cargo build --release + ad-hoc code signing
 ```
 
-macOS ties the Accessibility permission to the binary's code signature. An ad-hoc
-signature changes on every build, so you have to grant the permission again after
+macOS ties Access to the binary's code signature. An ad-hoc
+signature changes on every build, so you have to grant Access again after
 each rebuild. To keep it across rebuilds, create a code-signing certificate
 (Keychain Access → Certificate Assistant → Create a Certificate…, type "Code Signing")
 and build with it:
@@ -34,15 +34,16 @@ butterscroll runs as a menu-bar icon (a mouse) with no Dock icon. The menu has:
 - **Enabled**: pause or resume all remapping and scrolling.
 - **Settings…**: opens the settings window.
 - **Open Config File** / **Reload Config**.
-- **Grant Access…**: shown while the permission is missing. butterscroll keeps retrying, so it
+- **Grant Access…**: shown while Access is missing. It opens System Settings → Privacy &
+  Security → System & App Protection Override (Accessibility before macOS 27.3). butterscroll keeps retrying, so it
   starts working as soon as you grant access.
 - **Quit butterscroll**.
 
 Run `butterscroll --help` for every command.
 
-## Permissions
+## Access
 
-butterscroll needs **Input Monitoring** and permission to control the Mac:
+butterscroll needs **Input Monitoring** and Access, which lets it control the Mac:
 
 - macOS 27.3 and later: **System & App Protection Override** (System Settings → Privacy &
   Security). The Accessibility pane there is only for assistive technologies and has no
@@ -50,8 +51,13 @@ butterscroll needs **Input Monitoring** and permission to control the Mac:
   of the `butterscroll` binary, choose it and press Done. butterscroll starts without a restart.
 - Earlier macOS: **Accessibility** (Privacy & Security → Accessibility).
 
-When you run butterscroll from a terminal, macOS gives the permission to the terminal app. When
-launchd starts it, the permission goes to the `butterscroll` binary itself.
+When you run butterscroll from a terminal, macOS gives Access to the terminal app. When
+launchd starts it, Access goes to the `butterscroll` binary itself.
+
+Settings → **Access** shows whether macOS allows butterscroll (`✓ Allowed` or `✗ Not allowed`),
+with an **Open System Settings** button and numbered steps that include the binary path and a
+Copy button. While Access is missing, the menu-bar icon shows a slash and Settings opens on
+Access by itself.
 
 butterscroll running but doing nothing? See
 [butterscroll runs but does nothing](../troubleshooting/macos-27-3-permission.md).
@@ -65,4 +71,4 @@ launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.jeffujioka.butterscr
 ```
 
 Logs go to `~/Library/Logs/butterscroll.log`. launchd restarts butterscroll if it crashes. A failed
-start, such as a missing permission, is retried every 10 s.
+start, such as missing Access, is retried every 10 s.

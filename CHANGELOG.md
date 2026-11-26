@@ -21,13 +21,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   both ends of each slider, an ⓘ button on the scroll timing and acceleration settings
   that works through an example with your current values, and a Try It list at the end
   of Scrolling to feel a change right after you make it.
+- Settings has an Access pane that shows whether macOS lets butterscroll work and how to allow it, step by step.
+- Grant Access… opens System & App Protection Override directly.
+- The menu-bar icon shows a slash, and Settings opens on Access, when butterscroll lacks Access.
+
+### Changed
+
+- The menu says "Needs access" instead of "Needs permission".
 
 ### Fixed
 
 - The menu said "butterscroll is running" while scrolling was plain macOS: after macOS disabled the
   event tap and it could not be switched back on (for example after a rebuild changed the
   signature), butterscroll never noticed. It now checks the tap once a second, re-enables it,
-  and if that fails shows "Needs permission" and retries until the access is granted again.
+  and if that fails shows "Needs access" and retries until Access is granted again.
 - Back and forward buttons did nothing in Dia once butterscroll ran: butterscroll swallowed them and sent
   `⌘[` and `⌘]`, which Dia ignores (it uses `⌘←` and `⌘→`). Buttons 4 and 5 now default
   to a normal click, so each app handles them as it does without butterscroll. An existing config

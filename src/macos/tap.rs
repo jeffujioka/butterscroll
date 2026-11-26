@@ -43,7 +43,7 @@ fn with_tap<R>(f: impl FnOnce(&mut Tap) -> R) -> Option<R> {
     TAP.with(|cell| cell.try_borrow_mut().ok()?.as_mut().map(f))
 }
 
-/// Asks macOS to show its permission dialog if butterscroll has no access yet. On macOS
+/// Asks macOS to show its Access dialog if butterscroll has no Access yet. On macOS
 /// 27.3 and later this lists butterscroll under System & App Protection Override.
 pub fn request_access() {
     unsafe {
@@ -63,7 +63,7 @@ pub fn request_access() {
 }
 
 /// Creates the event tap; null while macOS denies it or leaves it disabled. Whether the tap can be
-/// created is the only reliable permission test: `AXIsProcessTrusted` ignores
+/// created is the only reliable Access test: `AXIsProcessTrusted` ignores
 /// the System & App Protection Override grant of macOS 27.3.
 fn create_port() -> CFMachPortRef {
     let mask = [kCGEventOtherMouseDown, kCGEventOtherMouseUp, kCGEventOtherMouseDragged, kCGEventScrollWheel]

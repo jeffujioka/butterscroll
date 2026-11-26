@@ -168,19 +168,19 @@ fn check_permissions() -> Result<(), String> {
         println!("event tap: allowed");
         Ok(())
     } else {
-        Err(format!("event tap: NOT allowed. {}", permission_hint()))
+        Err(format!("event tap: NOT allowed. {}", access_hint()))
     }
 }
 
-/// macOS grants the permission to the *responsible* app: the terminal when butterscroll is
+/// macOS grants Access to the *responsible* app: the terminal when butterscroll is
 /// started from a shell, the butterscroll binary itself only when launchd starts it.
 #[cfg(target_os = "macos")]
-fn permission_hint() -> String {
+fn access_hint() -> String {
     const PANE: &str = "System Settings → Privacy & Security → System & App Protection Override \
                         (Accessibility before macOS 27.3) and → Input Monitoring";
     match std::env::var("TERM_PROGRAM") {
         Ok(term) if !term.is_empty() => format!(
-            "butterscroll was started from a terminal ({term}), so macOS checks the terminal's permission, not butterscroll's. \
+            "butterscroll was started from a terminal ({term}), so macOS checks the terminal's Access, not butterscroll's. \
              Either enable {term} under {PANE} and restart it, or start butterscroll through launchd \
              (docs/guide/install.md → \"Start at login\") so the butterscroll entry applies."
         ),
@@ -207,7 +207,7 @@ fn run(config_path: PathBuf, debug: bool) -> Result<(), String> {
     };
     redirect_log_to_file();
     if !macos::tap::can_create() {
-        eprintln!("butterscroll: permission missing. {}", permission_hint());
+        eprintln!("butterscroll: Access missing. {}", access_hint());
     }
     macos::app::run(config_path, debug)
 }

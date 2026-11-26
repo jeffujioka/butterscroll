@@ -3,7 +3,9 @@
 ## Settings window
 
 Use **Settings…** in the menu (or `butterscroll settings`). The window follows the system
-light/dark appearance and has three panes: Scrolling, Click and Drag, and Buttons.
+light/dark appearance and has four panes: Scrolling, Click and Drag, Buttons, and Access
+(whether macOS lets butterscroll work, and how to allow it; see
+[Access](install.md#access)).
 Changes are checked while you edit and saved automatically as soon as they are
 valid; there is no Save button. The running app reloads the file within a second.
 

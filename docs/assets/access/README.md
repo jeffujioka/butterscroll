@@ -5,7 +5,7 @@ The Access pane in Settings shows four steps for allowing butterscroll. Each ste
 | File | Step it illustrates |
 |------|---------------------|
 | `step-1-add.png` | 1. Click + below the list. |
-| `step-2-go-to-folder.png` | 2. Press Cmd-Shift-G, paste the path, press Return, then click Add. |
+| `step-2-go-to-folder.png` | 2. Press Cmd-Shift-G, paste the path below, press Return, then click Add. |
 | `step-3-override.png` | 3. Choose Override System Protections. |
 | `step-4-allow.png` | 4. Acknowledge each item, click Allow System & App Protection Override, then authenticate. |
 

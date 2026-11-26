@@ -176,11 +176,11 @@ impl App {
     fn on_access(&mut self, has_access: bool) {
         if self.icon_warning != !has_access {
             if let Some(tray) = &self.tray {
-                if let Err(e) = tray.set_icon_templated(Some(tray_icon(!has_access))) {
-                    eprintln!("butterscroll: updating the menu-bar icon: {e}");
+                match tray.set_icon_templated(Some(tray_icon(!has_access))) {
+                    Ok(()) => self.icon_warning = !has_access,
+                    Err(e) => eprintln!("butterscroll: updating the menu-bar icon: {e}"),
                 }
             }
-            self.icon_warning = !has_access;
         }
         if self.access_watch.update(has_access) {
             eprintln!("butterscroll: Access missing; opening Settings");

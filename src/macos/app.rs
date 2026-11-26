@@ -263,6 +263,11 @@ impl ApplicationHandler<UserEvent> for App {
                     if self.tap_installed {
                         self.refresh_menu();
                     }
+                } else if !tap::is_alive() {
+                    eprintln!("butterscroll: event tap stopped working; waiting for permission (menu → Grant Access…)");
+                    tap::uninstall();
+                    self.tap_installed = false;
+                    self.refresh_menu();
                 } else if self.mtime() != self.config_mtime {
                     self.reload();
                     self.refresh_menu();

@@ -1,16 +1,17 @@
-# butterscroll runs but does nothing (macOS 27.3 permission)
+# butterscroll runs but does nothing (macOS 27.3 Access)
 
 Read this when `com.jeffujioka.butterscroll` is `running` in launchd but no button remapping or smooth scrolling happens.
 
 ## Symptom
 
 - `launchctl print gui/$(id -u)/com.jeffujioka.butterscroll` shows `state = running`.
-- `~/Library/Logs/butterscroll.log` ends with `permission missing …` and `waiting for permission (menu → Grant Access…)`, and never prints `butterscroll: running (config: …)`.
-- The menu-bar status reads "Needs permission".
+- `~/Library/Logs/butterscroll.log` ends with `butterscroll: Access missing. …` and `butterscroll: waiting for Access (menu → Grant Access…)`, and never prints `butterscroll: running (config: …)`.
+- The menu-bar status reads "Needs access", the menu-bar icon shows a slash, and Settings opens on Access by itself (`butterscroll: Access missing; opening Settings` in the log).
+- Also the case when the log ends with `butterscroll: event tap stopped working; waiting for Access (menu → Grant Access…)`: macOS disabled a running tap and it could not be re-enabled, usually because a rebuild changed the signature. butterscroll then retries every second; apply the Fix below.
 
 ## Cause
 
-macOS 27.3 beta 2 split the old Accessibility permission (Apple: "Device Control and Data Access") into two settings:
+macOS 27.3 beta 2 split the old Accessibility grant (Apple: "Device Control and Data Access") into two settings:
 
 - **System & App Protection Override**: lets an app control the Mac. butterscroll needs this to create its event tap, which rewrites and swallows events.
 - **Accessibility**: now only for assistive technologies. It has no `+` button and lists only apps with an Accessibility designation.
@@ -22,7 +23,7 @@ Source: [macOS 27.3 Beta 2 release notes, Privacy & Security](https://developer.
 ## Diagnose
 
 1. Log: `tail ~/Library/Logs/butterscroll.log`. `butterscroll: running` means the tap exists.
-2. Do not trust `target/release/butterscroll check` from a terminal for the launchd job. It checks the terminal app's permission, not the `butterscroll` binary's.
+2. Do not trust `target/release/butterscroll check` from a terminal for the launchd job. It checks the terminal app's Access, not the `butterscroll` binary's.
 3. Confirm the tap from outside. A tap of the `butterscroll run` pid with event mask `e400000` (other mouse down/up/drag + scroll) and `enabled=true` is butterscroll's. This Swift snippet lists them:
 
    ```swift
@@ -34,14 +35,14 @@ Source: [macOS 27.3 Beta 2 release notes, Privacy & Security](https://developer.
    for t in l.prefix(Int(n)) { print(t.tappingProcess, String(t.eventsOfInterest, radix: 16), t.enabled) }
    ```
 
-4. `log show --last 2m --info --debug --predicate 'process == "tccd" AND eventMessage CONTAINS "butterscroll"'` shows the permission decisions for butterscroll.
+4. `log show --last 2m --info --debug --predicate 'process == "tccd" AND eventMessage CONTAINS "butterscroll"'` shows the Access decisions for butterscroll.
 
 ## Fix
 
 Two grants are needed for the `butterscroll` binary that launchd starts:
 
 1. **Input Monitoring**: System Settings → Privacy & Security → Input Monitoring. Enable `butterscroll`.
-2. **System & App Protection Override**: System Settings → Privacy & Security → System & App Protection Override.
+2. **System & App Protection Override**: click **Grant Access…** in the menu, or **Open System Settings** in Settings → Access. Either opens System Settings → Privacy & Security → System & App Protection Override (Accessibility before macOS 27.3). Settings → Access also lists these steps with the binary path and a Copy button.
    1. Click `+`.
    2. Press Cmd-Shift-G, enter the full path of the binary (for example `~/butterscroll/target/release/butterscroll`, wherever your checkout is), press Return, then Add.
    3. In the sheet "Choose Apps for 'butterscroll' to Control", choose **Override System Protections**.
@@ -69,4 +70,4 @@ launchctl kickstart -k gui/$(id -u)/com.jeffujioka.butterscroll
 
 With an Apple Development certificate, a fresh signature still required one new grant, so the first build with a new identity needs the Fix steps once. That the grant then survives later rebuilds is expected but not verified. Apple Development certificates expire yearly and each renewal breaks the grant (ADR 0001, `docs/adr/0001-self-signed-release-cert.md`).
 
-For `butterscroll` started from a terminal instead of launchd, macOS checks the terminal app's permission, not butterscroll's.
+For `butterscroll` started from a terminal instead of launchd, macOS checks the terminal app's Access, not butterscroll's.

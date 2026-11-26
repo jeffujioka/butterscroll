@@ -28,6 +28,7 @@ struct Tap {
     engine: Engine,
     cfg: Config,
     port: CFMachPortRef,
+    source: CFRunLoopSourceRef,
     timer: CFRunLoopTimerRef,
     enabled: bool,
     debug: bool,
@@ -42,7 +43,7 @@ fn with_tap<R>(f: impl FnOnce(&mut Tap) -> R) -> Option<R> {
     TAP.with(|cell| cell.try_borrow_mut().ok()?.as_mut().map(f))
 }
 
-/// Asks macOS to show its permission dialog if butterscroll has no access yet. On macOS
+/// Asks macOS to show its Access dialog if butterscroll has no Access yet. On macOS
 /// 27.3 and later this lists butterscroll under System & App Protection Override.
 pub fn request_access() {
     unsafe {
@@ -61,22 +62,28 @@ pub fn request_access() {
     }
 }
 
-/// Creates the event tap; null while macOS denies it. Whether the tap can be
-/// created is the only reliable permission test: `AXIsProcessTrusted` ignores
+/// Creates the event tap; null while macOS denies it or leaves it disabled. Whether the tap can be
+/// created is the only reliable Access test: `AXIsProcessTrusted` ignores
 /// the System & App Protection Override grant of macOS 27.3.
 fn create_port() -> CFMachPortRef {
     let mask = [kCGEventOtherMouseDown, kCGEventOtherMouseUp, kCGEventOtherMouseDragged, kCGEventScrollWheel]
         .into_iter()
         .fold(0, |m, t| m | event_mask_bit(t));
     unsafe {
-        CGEventTapCreate(
+        let port = CGEventTapCreate(
             kCGSessionEventTap,
             kCGHeadInsertEventTap,
             kCGEventTapOptionDefault,
             mask,
             tap_callback,
             ptr::null_mut(),
-        )
+        );
+        if !port.is_null() && !CGEventTapIsEnabled(port) {
+            CFMachPortInvalidate(port);
+            CFRelease(port);
+            return ptr::null_mut();
+        }
+        port
     }
 }
 
@@ -121,11 +128,46 @@ pub fn install(load_cfg: impl FnOnce() -> Config, debug: bool) -> bool {
 
         TAP.with(|cell| {
             *cell.borrow_mut() =
-                Some(Tap { engine: Engine::new(cfg.clone()), cfg, port, timer, enabled: true, debug })
+                Some(Tap { engine: Engine::new(cfg.clone()), cfg, port, source, timer, enabled: true, debug })
         });
         CGEventTapEnable(port, true);
     }
     true
+}
+
+/// Whether a tap that should be `wanted` is still delivering events. A tap macOS
+/// disabled gets one re-enable; one that stays disabled is dead. A paused tap is
+/// disabled on purpose and counts as alive.
+fn tap_alive(wanted: bool, is_enabled: impl Fn() -> bool, enable: impl FnOnce()) -> bool {
+    if !wanted || is_enabled() {
+        return true;
+    }
+    enable();
+    is_enabled()
+}
+
+/// Checks the installed tap, re-enabling it if macOS disabled it. False once it
+/// cannot be revived: the grant no longer matches the binary, or macOS revoked it.
+pub fn is_alive() -> bool {
+    with_tap(|tap| {
+        let port = tap.port;
+        tap_alive(tap.enabled, || unsafe { CGEventTapIsEnabled(port) }, || unsafe { CGEventTapEnable(port, true) })
+    })
+    .unwrap_or(true)
+}
+
+/// Removes the tap and animation timer, so `install` can create fresh ones.
+pub fn uninstall() {
+    let Some(mut tap) = TAP.with(|cell| cell.try_borrow_mut().ok()?.take()) else { return };
+    unsafe {
+        post_all(&tap.engine.stop_scrolling());
+        CFRunLoopTimerInvalidate(tap.timer);
+        CFRelease(tap.timer);
+        CFMachPortInvalidate(tap.port);
+        CFRelease(tap.source);
+        CFRelease(tap.port);
+    }
+    set_cursor_frozen(false);
 }
 
 /// Swaps in a new config; any drag or scroll in progress is dropped.
@@ -304,5 +346,35 @@ fn install_signal_handlers() {
         unsafe {
             signal(sig, on_signal);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::cell::Cell;
+
+    #[test]
+    fn disabled_tap_that_enable_cannot_revive_is_dead() {
+        let enable_calls = Cell::new(0);
+        let alive = tap_alive(true, || false, || enable_calls.set(enable_calls.get() + 1));
+        assert!(!alive);
+        assert_eq!(enable_calls.get(), 1);
+    }
+
+    #[test]
+    fn disabled_tap_that_enable_revives_is_alive() {
+        let enabled = Cell::new(false);
+        assert!(tap_alive(true, || enabled.get(), || enabled.set(true)));
+    }
+
+    #[test]
+    fn enabled_tap_is_left_alone() {
+        assert!(tap_alive(true, || true, || panic!("must not re-enable a healthy tap")));
+    }
+
+    #[test]
+    fn paused_tap_is_alive_even_though_disabled() {
+        assert!(tap_alive(false, || false, || panic!("a paused tap stays disabled")));
     }
 }

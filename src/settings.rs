@@ -8,6 +8,7 @@
 use std::ops::RangeInclusive;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock};
+use std::time::{Duration, Instant};
 
 use eframe::egui::epaint::text::VariationCoords;
 use eframe::egui::{
@@ -39,8 +40,14 @@ const LABEL_GAP: f32 = 12.0;
 const INFO_WIDTH: f32 = 280.0;
 const TRY_IT_HEIGHT: f32 = 160.0;
 const TRY_IT_ROW_HEIGHT: f32 = 22.0;
+/// How often the Access pane re-checks whether butterscroll is allowed.
+const PROBE_INTERVAL: Duration = Duration::from_secs(1);
 
-pub fn run(path: PathBuf) -> Result<(), String> {
+pub fn run(path: PathBuf, pane: Option<&str>) -> Result<(), String> {
+    let pane = match pane {
+        None => Pane::Scrolling,
+        Some(s) => Pane::from_arg(s).ok_or_else(|| format!("unknown pane {s:?} (expected: access)"))?,
+    };
     // Held while the window is open: a second `butterscroll settings` does nothing.
     #[cfg(target_os = "macos")]
     let _instance = match crate::paths::settings_lock().map(|p| crate::macos::instance::try_acquire(&p)) {
@@ -63,7 +70,17 @@ pub fn run(path: PathBuf) -> Result<(), String> {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => (default_file(), None),
         Err(e) => return Err(format!("reading {}: {e}", path.display())),
     };
-    let app = SettingsApp { path, written: file.clone(), file, notice, pane: Pane::Scrolling };
+    let exe = std::env::current_exe().ok().map(|e| e.canonicalize().unwrap_or(e));
+    let app = SettingsApp {
+        path,
+        written: file.clone(),
+        file,
+        notice,
+        pane,
+        access: AccessProbe::default(),
+        exe,
+        access_error: None,
+    };
 
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
@@ -112,16 +129,23 @@ enum Pane {
     Scrolling,
     Drag,
     Buttons,
+    Access,
 }
 
 impl Pane {
-    const ALL: [Pane; 3] = [Pane::Scrolling, Pane::Drag, Pane::Buttons];
+    const ALL: [Pane; 4] = [Pane::Scrolling, Pane::Drag, Pane::Buttons, Pane::Access];
+
+    /// The `--pane` value naming a pane to open on; only `access` for now.
+    fn from_arg(s: &str) -> Option<Pane> {
+        (s == "access").then_some(Pane::Access)
+    }
 
     fn title(self) -> &'static str {
         match self {
             Pane::Scrolling => "Scrolling",
             Pane::Drag => "Click and Drag",
             Pane::Buttons => "Buttons",
+            Pane::Access => "Access",
         }
     }
 
@@ -131,6 +155,7 @@ impl Pane {
             Pane::Scrolling => Color32::from_rgb(52, 199, 89),
             Pane::Drag => Color32::from_rgb(175, 82, 222),
             Pane::Buttons => Color32::from_rgb(255, 149, 0),
+            Pane::Access => Color32::from_rgb(88, 86, 214),
         }
     }
 }
@@ -143,6 +168,12 @@ struct SettingsApp {
     file: ConfigFile,
     notice: Option<Notice>,
     pane: Pane,
+    access: AccessProbe,
+    /// Canonical path of this executable, shown in the Access steps; `None` if unknown.
+    exe: Option<PathBuf>,
+    /// Failure to open System Settings from the Access pane; kept apart from `notice`,
+    /// which only the footer (hidden on Access) shows.
+    access_error: Option<String>,
 }
 
 impl eframe::App for SettingsApp {
@@ -157,6 +188,12 @@ impl eframe::App for SettingsApp {
             self.save();
         }
         let unsaved_invalid = self.file != self.written && validation.is_err();
+        #[cfg(target_os = "macos")]
+        let check = crate::macos::tap::can_create;
+        #[cfg(not(target_os = "macos"))]
+        let check = || false;
+        self.access.refresh(Instant::now(), check);
+        ui.ctx().request_repaint_after(PROBE_INTERVAL);
 
         egui::Panel::left("sidebar")
             .exact_size(SIDEBAR_WIDTH)
@@ -164,9 +201,11 @@ impl eframe::App for SettingsApp {
             .frame(Frame::new().fill(p.sidebar).inner_margin(Margin { left: 10, right: 10, top: 0, bottom: 14 }))
             .show(ui, |ui| self.sidebar(ui));
 
-        egui::Panel::bottom("footer")
-            .frame(Frame::new().fill(p.window).inner_margin(Margin::symmetric(20, 12)))
-            .show(ui, |ui| self.footer(ui, validation.as_ref().err(), unsaved_invalid));
+        if self.pane != Pane::Access {
+            egui::Panel::bottom("footer")
+                .frame(Frame::new().fill(p.window).inner_margin(Margin::symmetric(20, 12)))
+                .show(ui, |ui| self.footer(ui, validation.as_ref().err(), unsaved_invalid));
+        }
 
         egui::Panel::top("header")
             .exact_size(TITLEBAR_HEIGHT)
@@ -184,6 +223,7 @@ impl eframe::App for SettingsApp {
                         Pane::Scrolling => scroll_pane(ui, &mut self.file),
                         Pane::Drag => drag_pane(ui, &mut self.file),
                         Pane::Buttons => buttons_pane(ui, &mut self.file),
+                        Pane::Access => access_pane(ui, self.access.allowed, self.exe.as_deref(), &mut self.access_error),
                     }
                 });
             });
@@ -205,7 +245,7 @@ impl SettingsApp {
         move_window_by(ui, strip);
         ui.spacing_mut().item_spacing.y = 2.0;
         for pane in Pane::ALL {
-            if sidebar_item(ui, pane, self.pane == pane).clicked() {
+            if sidebar_item(ui, pane, self.pane == pane, pane == Pane::Access && !self.access.allowed).clicked() {
                 self.pane = pane;
             }
         }
@@ -845,7 +885,7 @@ fn move_window_by(ui: &Ui, rect: Rect) {
     }
 }
 
-fn sidebar_item(ui: &mut Ui, pane: Pane, selected: bool) -> Response {
+fn sidebar_item(ui: &mut Ui, pane: Pane, selected: bool, badge: bool) -> Response {
     let p = Palette::of(ui);
     let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 30.0), Sense::click());
     resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::SelectableLabel, true, selected, pane.title()));
@@ -862,7 +902,100 @@ fn sidebar_item(ui: &mut Ui, pane: Pane, selected: bool) -> Response {
     paint_icon(painter, icon, pane);
     let color = if selected { Color32::WHITE } else { p.text };
     painter.text(pos2(icon.right() + 8.0, rect.center().y), Align2::LEFT_CENTER, pane.title(), FontId::proportional(13.0), color);
+    if badge {
+        painter.circle_filled(pos2(rect.right() - 12.0, rect.center().y), 4.0, p.danger);
+    }
     resp
+}
+
+/// Polls whether butterscroll may create its event tap, at most once per
+/// `PROBE_INTERVAL`, so the Access pane follows changes made in System Settings.
+#[derive(Default)]
+struct AccessProbe {
+    checked: Option<Instant>,
+    allowed: bool,
+}
+
+impl AccessProbe {
+    fn refresh(&mut self, now: Instant, check: impl FnOnce() -> bool) -> bool {
+        if self.checked.is_none_or(|t| now.saturating_duration_since(t) >= PROBE_INTERVAL) {
+            self.allowed = check();
+            self.checked = Some(now);
+        }
+        self.allowed
+    }
+}
+
+/// `error` holds the last failure to open System Settings, shown only on this pane.
+fn access_pane(ui: &mut Ui, allowed: bool, exe: Option<&Path>, error: &mut Option<String>) {
+    let p = Palette::of(ui);
+    card(ui, |ui| {
+        row(ui, "System & App Protection Override", Some(help("butterscroll needs this to smooth scrolling and remap buttons.")), |ui| {
+            if ui.button("Open System Settings").clicked() {
+                *error = open_grant_settings();
+            }
+            ui.add_space(8.0);
+            let (text, color) =
+                if allowed { ("✓ Allowed", Color32::from_rgb(52, 199, 89)) } else { ("✗ Not allowed", p.danger) };
+            ui.label(RichText::new(text).color(color));
+        });
+    });
+    if let Some(e) = error.as_deref() {
+        ui.add_space(6.0);
+        ui.horizontal_wrapped(|ui| {
+            ui.add_space(4.0);
+            ui.label(RichText::new(format!("⚠  {e}")).color(p.danger));
+        });
+    }
+
+    let steps = |ui: &mut Ui| {
+        card(ui, |ui| {
+            row(ui, "1. Click + below the list.", None, |_| {});
+            divider(ui);
+            ui.add_space(8.0);
+            ui.label("2. Press Cmd-Shift-G, paste the path below, press Return, then click Add.");
+            ui.add_space(4.0);
+            let path = exe.map_or_else(|| "(unknown)".to_string(), |e| e.display().to_string());
+            ui.horizontal(|ui| {
+                if exe.is_some() && ui.button("Copy").clicked() {
+                    ui.ctx().copy_text(path.clone());
+                }
+                ui.add(egui::Label::new(RichText::new(&path).monospace()).wrap());
+            });
+            ui.add_space(8.0);
+            divider(ui);
+            row(ui, "3. Choose Override System Protections.", None, |_| {});
+            divider(ui);
+            ui.add_space(8.0);
+            ui.label("4. Acknowledge each item, click Allow System & App Protection Override, then authenticate.");
+            ui.add_space(8.0);
+        });
+    };
+    if allowed {
+        ui.add_space(18.0);
+        egui::CollapsingHeader::new("How to allow butterscroll again").default_open(false).show(ui, steps);
+    } else {
+        section(ui, "How to allow butterscroll");
+        steps(ui);
+    }
+    footnote(
+        ui,
+        "butterscroll notices the change within a second. Opening + again and cancelling can switch Access off; \
+         see docs/troubleshooting/macos-27-3-permission.md.",
+    );
+}
+
+#[cfg(target_os = "macos")]
+fn open_grant_settings() -> Option<String> {
+    let url = crate::macos::access::grant_url();
+    let e = std::process::Command::new("/usr/bin/open").arg(url).spawn().err()?;
+    eprintln!("butterscroll: opening {url}: {e}");
+    Some(format!("opening {url}: {e}"))
+}
+
+#[cfg(not(target_os = "macos"))]
+fn open_grant_settings() -> Option<String> {
+    None
 }
 
 /// Small white glyph on a colored rounded tile, like the System Settings sidebar.
@@ -893,6 +1026,22 @@ fn paint_icon(painter: &egui::Painter, tile: Rect, pane: Pane) {
             let body = Rect::from_center_size(c, vec2(9.0, 13.0));
             painter.rect_stroke(body, 4.5, stroke, StrokeKind::Middle);
             painter.line_segment([pos2(c.x, body.top()), pos2(c.x, c.y - 1.0)], stroke);
+        }
+        Pane::Access => {
+            // Padlock: rounded body with a shackle arc above it.
+            let body = Rect::from_min_size(pos2(c.x - 5.0, c.y - 1.0), vec2(10.0, 7.5));
+            painter.rect_stroke(body, 1.5, stroke, StrokeKind::Middle);
+            let (r, base) = (3.2, body.top());
+            let arc: Vec<Pos2> = (0..=12)
+                .map(|i| {
+                    let a = std::f32::consts::PI * i as f32 / 12.0;
+                    pos2(c.x - r * a.cos(), base - 1.5 - r * a.sin())
+                })
+                .collect();
+            let mut shackle = vec![pos2(c.x - r, base)];
+            shackle.extend(arc);
+            shackle.push(pos2(c.x + r, base));
+            painter.add(Shape::line(shackle, stroke));
         }
     }
 }
@@ -1043,6 +1192,27 @@ fn apply_style(style: &mut egui::Style, p: &Palette) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn probe_checks_at_most_once_a_second() {
+        let t0 = Instant::now();
+        let mut probe = AccessProbe::default();
+        let mut calls = 0;
+        assert!(!probe.refresh(t0, || { calls += 1; false }));
+        for ms in [1, 16, 500, 999] {
+            probe.refresh(t0 + Duration::from_millis(ms), || { calls += 1; true });
+        }
+        assert_eq!(calls, 1);
+        assert!(probe.refresh(t0 + Duration::from_millis(1000), || { calls += 1; true }));
+        assert_eq!(calls, 2);
+    }
+
+    #[test]
+    fn pane_from_arg_accepts_only_access() {
+        assert!(matches!(Pane::from_arg("access"), Some(Pane::Access)));
+        assert!(Pane::from_arg("scrolling").is_none());
+        assert!(Pane::from_arg("").is_none());
+    }
 
     #[test]
     fn peak_notch_is_where_a_fast_streak_hits_the_maximum() {

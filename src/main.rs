@@ -22,7 +22,7 @@ butterscroll — mouse button remapping, smooth scrolling and click-and-drag ges
 
 USAGE:
     butterscroll [run] [--config PATH] [--debug]   start the menu-bar app (default command)
-    butterscroll settings [--config PATH]          open the settings window
+    butterscroll settings [--config PATH] [--pane access]  open the settings window
     butterscroll check [--config PATH]             validate config and report whether macOS allows the event tap
     butterscroll default-config                    print the default config
     butterscroll launch-agent                      print a LaunchAgent plist that starts butterscroll at login
@@ -35,10 +35,11 @@ struct Args {
     command: String,
     config: Option<PathBuf>,
     debug: bool,
+    pane: Option<String>,
 }
 
 fn parse_args() -> Result<Args, String> {
-    let mut args = Args { command: "run".into(), config: None, debug: false };
+    let mut args = Args { command: "run".into(), config: None, debug: false, pane: None };
     let mut it = std::env::args().skip(1);
     let mut command_seen = false;
     while let Some(arg) = it.next() {
@@ -46,6 +47,7 @@ fn parse_args() -> Result<Args, String> {
             "--config" | "-c" => {
                 args.config = Some(it.next().ok_or("--config needs a path")?.into());
             }
+            "--pane" => args.pane = Some(it.next().ok_or("--pane needs a value")?),
             "--debug" | "-d" => args.debug = true,
             "-V" | "--version" => args.command = "version".into(),
             "-h" | "--help" => args.command = "help".into(),
@@ -155,7 +157,7 @@ fn real_main(args: Args) -> Result<(), String> {
             check_permissions()
         }
         "run" => run(config_path(args.config)?, args.debug),
-        "settings" => settings::run(config_path(args.config)?),
+        "settings" => settings::run(config_path(args.config)?, args.pane.as_deref()),
         other => Err(format!("unknown command {other:?}\n\n{USAGE}")),
     }
 }
@@ -166,19 +168,19 @@ fn check_permissions() -> Result<(), String> {
         println!("event tap: allowed");
         Ok(())
     } else {
-        Err(format!("event tap: NOT allowed. {}", permission_hint()))
+        Err(format!("event tap: NOT allowed. {}", access_hint()))
     }
 }
 
-/// macOS grants the permission to the *responsible* app: the terminal when butterscroll is
+/// macOS grants Access to the *responsible* app: the terminal when butterscroll is
 /// started from a shell, the butterscroll binary itself only when launchd starts it.
 #[cfg(target_os = "macos")]
-fn permission_hint() -> String {
+fn access_hint() -> String {
     const PANE: &str = "System Settings → Privacy & Security → System & App Protection Override \
                         (Accessibility before macOS 27.3) and → Input Monitoring";
     match std::env::var("TERM_PROGRAM") {
         Ok(term) if !term.is_empty() => format!(
-            "butterscroll was started from a terminal ({term}), so macOS checks the terminal's permission, not butterscroll's. \
+            "butterscroll was started from a terminal ({term}), so macOS checks the terminal's Access, not butterscroll's. \
              Either enable {term} under {PANE} and restart it, or start butterscroll through launchd \
              (docs/guide/install.md → \"Start at login\") so the butterscroll entry applies."
         ),
@@ -205,7 +207,7 @@ fn run(config_path: PathBuf, debug: bool) -> Result<(), String> {
     };
     redirect_log_to_file();
     if !macos::tap::can_create() {
-        eprintln!("butterscroll: permission missing. {}", permission_hint());
+        eprintln!("butterscroll: Access missing. {}", access_hint());
     }
     macos::app::run(config_path, debug)
 }

@@ -1,6 +1,6 @@
 # butterscroll docs
 
-- [Install and run](guide/install.md): build, run, permissions, Start at login, logs
+- [Install and run](guide/install.md): build, run, Access, Start at login, logs
 - [Configure](guide/configure.md): the settings window, the config file and every action
 - [How it works](development/architecture.md): the code layout and the design
 - [Troubleshooting: butterscroll runs but does nothing](troubleshooting/macos-27-3-permission.md)

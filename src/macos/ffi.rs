@@ -91,6 +91,7 @@ extern "C" {
         user_info: *mut c_void,
     ) -> CFMachPortRef;
     pub fn CGEventTapEnable(tap: CFMachPortRef, enable: bool);
+    pub fn CGEventTapIsEnabled(tap: CFMachPortRef) -> bool;
     pub fn CGEventCreate(source: CGEventSourceRef) -> CGEventRef;
     pub fn CGEventGetLocation(event: CGEventRef) -> CGPoint;
     pub fn CGEventGetFlags(event: CGEventRef) -> CGEventFlags;
@@ -146,6 +147,7 @@ extern "C" {
         context: *mut CFRunLoopTimerContext,
     ) -> CFRunLoopTimerRef;
     pub fn CFRunLoopTimerSetNextFireDate(timer: CFRunLoopTimerRef, fire_date: CFAbsoluteTime);
+    pub fn CFRunLoopTimerInvalidate(timer: CFRunLoopTimerRef);
     pub fn CFDictionaryCreate(
         allocator: CFAllocatorRef,
         keys: *const CFTypeRef,

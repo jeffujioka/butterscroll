@@ -71,7 +71,16 @@ pub fn run(path: PathBuf, pane: Option<&str>) -> Result<(), String> {
         Err(e) => return Err(format!("reading {}: {e}", path.display())),
     };
     let exe = std::env::current_exe().ok().map(|e| e.canonicalize().unwrap_or(e));
-    let app = SettingsApp { path, written: file.clone(), file, notice, pane, access: AccessProbe::default(), exe };
+    let app = SettingsApp {
+        path,
+        written: file.clone(),
+        file,
+        notice,
+        pane,
+        access: AccessProbe::default(),
+        exe,
+        access_error: None,
+    };
 
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
@@ -162,6 +171,9 @@ struct SettingsApp {
     access: AccessProbe,
     /// Canonical path of this executable, shown in the Access steps; `None` if unknown.
     exe: Option<PathBuf>,
+    /// Failure to open System Settings from the Access pane; kept apart from `notice`,
+    /// which only the footer (hidden on Access) shows.
+    access_error: Option<String>,
 }
 
 impl eframe::App for SettingsApp {
@@ -211,11 +223,7 @@ impl eframe::App for SettingsApp {
                         Pane::Scrolling => scroll_pane(ui, &mut self.file),
                         Pane::Drag => drag_pane(ui, &mut self.file),
                         Pane::Buttons => buttons_pane(ui, &mut self.file),
-                        Pane::Access => {
-                            if let Some(n) = access_pane(ui, self.access.allowed, self.exe.as_deref()) {
-                                self.notice = Some(n);
-                            }
-                        }
+                        Pane::Access => access_pane(ui, self.access.allowed, self.exe.as_deref(), &mut self.access_error),
                     }
                 });
             });
@@ -918,14 +926,13 @@ impl AccessProbe {
     }
 }
 
-/// Returns an error notice if opening System Settings failed.
-fn access_pane(ui: &mut Ui, allowed: bool, exe: Option<&Path>) -> Option<Notice> {
+/// `error` holds the last failure to open System Settings, shown only on this pane.
+fn access_pane(ui: &mut Ui, allowed: bool, exe: Option<&Path>, error: &mut Option<String>) {
     let p = Palette::of(ui);
-    let mut notice = None;
     card(ui, |ui| {
         row(ui, "System & App Protection Override", Some(help("butterscroll needs this to smooth scrolling and remap buttons.")), |ui| {
             if ui.button("Open System Settings").clicked() {
-                notice = open_grant_settings();
+                *error = open_grant_settings();
             }
             ui.add_space(8.0);
             let (text, color) =
@@ -933,6 +940,13 @@ fn access_pane(ui: &mut Ui, allowed: bool, exe: Option<&Path>) -> Option<Notice>
             ui.label(RichText::new(text).color(color));
         });
     });
+    if let Some(e) = error.as_deref() {
+        ui.add_space(6.0);
+        ui.horizontal_wrapped(|ui| {
+            ui.add_space(4.0);
+            ui.label(RichText::new(format!("⚠  {e}")).color(p.danger));
+        });
+    }
 
     let steps = |ui: &mut Ui| {
         card(ui, |ui| {
@@ -969,19 +983,18 @@ fn access_pane(ui: &mut Ui, allowed: bool, exe: Option<&Path>) -> Option<Notice>
         "butterscroll notices the change within a second. Opening + again and cancelling can switch Access off; \
          see docs/troubleshooting/macos-27-3-permission.md.",
     );
-    notice
 }
 
 #[cfg(target_os = "macos")]
-fn open_grant_settings() -> Option<Notice> {
+fn open_grant_settings() -> Option<String> {
     let url = crate::macos::access::grant_url();
     let e = std::process::Command::new("/usr/bin/open").arg(url).spawn().err()?;
     eprintln!("butterscroll: opening {url}: {e}");
-    Some(Notice::error(format!("opening {url}: {e}")))
+    Some(format!("opening {url}: {e}"))
 }
 
 #[cfg(not(target_os = "macos"))]
-fn open_grant_settings() -> Option<Notice> {
+fn open_grant_settings() -> Option<String> {
     None
 }
 

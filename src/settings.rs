@@ -40,7 +40,11 @@ const INFO_WIDTH: f32 = 280.0;
 const TRY_IT_HEIGHT: f32 = 160.0;
 const TRY_IT_ROW_HEIGHT: f32 = 22.0;
 
-pub fn run(path: PathBuf) -> Result<(), String> {
+pub fn run(path: PathBuf, pane: Option<&str>) -> Result<(), String> {
+    let pane = match pane {
+        None => Pane::Scrolling,
+        Some(s) => Pane::from_arg(s).ok_or_else(|| format!("unknown pane {s:?} (expected: access)"))?,
+    };
     // Held while the window is open: a second `butterscroll settings` does nothing.
     #[cfg(target_os = "macos")]
     let _instance = match crate::paths::settings_lock().map(|p| crate::macos::instance::try_acquire(&p)) {
@@ -63,7 +67,7 @@ pub fn run(path: PathBuf) -> Result<(), String> {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => (default_file(), None),
         Err(e) => return Err(format!("reading {}: {e}", path.display())),
     };
-    let app = SettingsApp { path, written: file.clone(), file, notice, pane: Pane::Scrolling };
+    let app = SettingsApp { path, written: file.clone(), file, notice, pane };
 
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
@@ -112,16 +116,23 @@ enum Pane {
     Scrolling,
     Drag,
     Buttons,
+    Access,
 }
 
 impl Pane {
-    const ALL: [Pane; 3] = [Pane::Scrolling, Pane::Drag, Pane::Buttons];
+    const ALL: [Pane; 4] = [Pane::Scrolling, Pane::Drag, Pane::Buttons, Pane::Access];
+
+    /// The `--pane` value naming a pane to open on; only `access` for now.
+    fn from_arg(s: &str) -> Option<Pane> {
+        (s == "access").then_some(Pane::Access)
+    }
 
     fn title(self) -> &'static str {
         match self {
             Pane::Scrolling => "Scrolling",
             Pane::Drag => "Click and Drag",
             Pane::Buttons => "Buttons",
+            Pane::Access => "Access",
         }
     }
 
@@ -131,6 +142,7 @@ impl Pane {
             Pane::Scrolling => Color32::from_rgb(52, 199, 89),
             Pane::Drag => Color32::from_rgb(175, 82, 222),
             Pane::Buttons => Color32::from_rgb(255, 149, 0),
+            Pane::Access => Color32::from_rgb(88, 86, 214),
         }
     }
 }
@@ -184,6 +196,7 @@ impl eframe::App for SettingsApp {
                         Pane::Scrolling => scroll_pane(ui, &mut self.file),
                         Pane::Drag => drag_pane(ui, &mut self.file),
                         Pane::Buttons => buttons_pane(ui, &mut self.file),
+                        Pane::Access => access_pane(ui),
                     }
                 });
             });
@@ -865,6 +878,11 @@ fn sidebar_item(ui: &mut Ui, pane: Pane, selected: bool) -> Response {
     resp
 }
 
+// Placeholder until the Access pane gets its content.
+fn access_pane(ui: &mut Ui) {
+    ui.heading("Access");
+}
+
 /// Small white glyph on a colored rounded tile, like the System Settings sidebar.
 fn paint_icon(painter: &egui::Painter, tile: Rect, pane: Pane) {
     painter.rect_filled(tile, 5.0, pane.tint());
@@ -893,6 +911,22 @@ fn paint_icon(painter: &egui::Painter, tile: Rect, pane: Pane) {
             let body = Rect::from_center_size(c, vec2(9.0, 13.0));
             painter.rect_stroke(body, 4.5, stroke, StrokeKind::Middle);
             painter.line_segment([pos2(c.x, body.top()), pos2(c.x, c.y - 1.0)], stroke);
+        }
+        Pane::Access => {
+            // Padlock: rounded body with a shackle arc above it.
+            let body = Rect::from_min_size(pos2(c.x - 5.0, c.y - 1.0), vec2(10.0, 7.5));
+            painter.rect_stroke(body, 1.5, stroke, StrokeKind::Middle);
+            let (r, base) = (3.2, body.top());
+            let arc: Vec<Pos2> = (0..=12)
+                .map(|i| {
+                    let a = std::f32::consts::PI * i as f32 / 12.0;
+                    pos2(c.x - r * a.cos(), base - 1.5 - r * a.sin())
+                })
+                .collect();
+            let mut shackle = vec![pos2(c.x - r, base)];
+            shackle.extend(arc);
+            shackle.push(pos2(c.x + r, base));
+            painter.add(Shape::line(shackle, stroke));
         }
     }
 }
@@ -1043,6 +1077,13 @@ fn apply_style(style: &mut egui::Style, p: &Palette) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pane_from_arg_accepts_only_access() {
+        assert!(matches!(Pane::from_arg("access"), Some(Pane::Access)));
+        assert!(Pane::from_arg("scrolling").is_none());
+        assert!(Pane::from_arg("").is_none());
+    }
 
     #[test]
     fn peak_notch_is_where_a_fast_streak_hits_the_maximum() {

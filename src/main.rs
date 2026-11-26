@@ -22,7 +22,7 @@ butterscroll — mouse button remapping, smooth scrolling and click-and-drag ges
 
 USAGE:
     butterscroll [run] [--config PATH] [--debug]   start the menu-bar app (default command)
-    butterscroll settings [--config PATH]          open the settings window
+    butterscroll settings [--config PATH] [--pane access]  open the settings window
     butterscroll check [--config PATH]             validate config and report whether macOS allows the event tap
     butterscroll default-config                    print the default config
     butterscroll launch-agent                      print a LaunchAgent plist that starts butterscroll at login
@@ -35,10 +35,11 @@ struct Args {
     command: String,
     config: Option<PathBuf>,
     debug: bool,
+    pane: Option<String>,
 }
 
 fn parse_args() -> Result<Args, String> {
-    let mut args = Args { command: "run".into(), config: None, debug: false };
+    let mut args = Args { command: "run".into(), config: None, debug: false, pane: None };
     let mut it = std::env::args().skip(1);
     let mut command_seen = false;
     while let Some(arg) = it.next() {
@@ -46,6 +47,7 @@ fn parse_args() -> Result<Args, String> {
             "--config" | "-c" => {
                 args.config = Some(it.next().ok_or("--config needs a path")?.into());
             }
+            "--pane" => args.pane = Some(it.next().ok_or("--pane needs a value")?),
             "--debug" | "-d" => args.debug = true,
             "-V" | "--version" => args.command = "version".into(),
             "-h" | "--help" => args.command = "help".into(),
@@ -155,7 +157,7 @@ fn real_main(args: Args) -> Result<(), String> {
             check_permissions()
         }
         "run" => run(config_path(args.config)?, args.debug),
-        "settings" => settings::run(config_path(args.config)?),
+        "settings" => settings::run(config_path(args.config)?, args.pane.as_deref()),
         other => Err(format!("unknown command {other:?}\n\n{USAGE}")),
     }
 }

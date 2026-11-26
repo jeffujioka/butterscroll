@@ -29,3 +29,7 @@ _Avoid_: auto-start, launch agent, autostart
 **First launch**:
 The first time butterscroll runs for a given user on a Mac. It is the only moment butterscroll turns on Start at login by itself.
 _Avoid_: first run, onboarding
+
+**Access**:
+The macOS grant that lets butterscroll intercept and change mouse events: System & App Protection Override on macOS 27.3 and later, Accessibility before. butterscroll has Access when macOS lets it create its event tap.
+_Avoid_: permission, authorization, trust

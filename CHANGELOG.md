@@ -24,6 +24,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The menu said "butterscroll is running" while scrolling was plain macOS: after macOS disabled the
+  event tap and it could not be switched back on (for example after a rebuild changed the
+  signature), butterscroll never noticed. It now checks the tap once a second, re-enables it,
+  and if that fails shows "Needs permission" and retries until the access is granted again.
 - Back and forward buttons did nothing in Dia once butterscroll ran: butterscroll swallowed them and sent
   `⌘[` and `⌘]`, which Dia ignores (it uses `⌘←` and `⌘→`). Buttons 4 and 5 now default
   to a normal click, so each app handles them as it does without butterscroll. An existing config

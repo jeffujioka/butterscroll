@@ -7,6 +7,7 @@ Read this when `com.jeffujioka.butterscroll` is `running` in launchd but no butt
 - `launchctl print gui/$(id -u)/com.jeffujioka.butterscroll` shows `state = running`.
 - `~/Library/Logs/butterscroll.log` ends with `permission missing …` and `waiting for permission (menu → Grant Access…)`, and never prints `butterscroll: running (config: …)`.
 - The menu-bar status reads "Needs permission".
+- Also the case when the log ends with `event tap stopped working; waiting for permission`: macOS disabled a running tap and it could not be re-enabled, usually because a rebuild changed the signature. butterscroll then retries every second; apply the Fix below.
 
 ## Cause
 

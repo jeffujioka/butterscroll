@@ -936,7 +936,7 @@ fn access_pane(ui: &mut Ui, allowed: bool, exe: Option<&Path>, error: &mut Optio
             }
             ui.add_space(8.0);
             let (text, color) =
-                if allowed { ("✓ Allowed", Color32::from_rgb(52, 199, 89)) } else { ("✕ Not allowed", p.danger) };
+                if allowed { ("✓ Allowed", Color32::from_rgb(52, 199, 89)) } else { ("✗ Not allowed", p.danger) };
             ui.label(RichText::new(text).color(color));
         });
     });

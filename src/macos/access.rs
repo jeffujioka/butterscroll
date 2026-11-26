@@ -1,8 +1,5 @@
 //! Access decisions: which Settings link grants access, and when to open Settings.
 
-// Unused until the menu app and Settings window wire this in (Task 5).
-#![allow(dead_code)]
-
 use std::ffi::CStr;
 
 /// Settings pane for the privacy override (macOS 27.3 and later).

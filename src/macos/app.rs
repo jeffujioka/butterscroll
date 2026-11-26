@@ -14,13 +14,15 @@ use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::platform::macos::{ActivationPolicy, EventLoopBuilderExtMacOS};
 use winit::window::WindowId;
 
+use super::access::{self, AccessWatch};
 use super::tap;
 use crate::config::{Config, DEFAULT_TOML};
 use crate::version;
 
-/// macOS 27.3 moved event-tap permission out of Accessibility into System & App
-/// Protection Override, which has no URL anchor of its own: open Privacy & Security.
-const PRIVACY_PANE: &str = "x-apple.systempreferences:com.apple.preference.security";
+/// The tray icon, slashed when `warning` (Access is missing).
+fn tray_icon(warning: bool) -> Icon {
+    Icon::from_rgba(mouse_icon_rgba(ICON_PX, warning), ICON_PX, ICON_PX).expect("icon size matches buffer")
+}
 
 enum UserEvent {
     Menu(MenuEvent),
@@ -48,6 +50,9 @@ struct App {
     config_mtime: Option<SystemTime>,
     config_error: Option<String>,
     settings_child: Option<Child>,
+    access_watch: AccessWatch,
+    /// Whether the tray currently shows the slashed (warning) icon.
+    icon_warning: bool,
 }
 
 pub fn run(config_path: PathBuf, debug: bool) -> Result<(), String> {
@@ -79,6 +84,8 @@ pub fn run(config_path: PathBuf, debug: bool) -> Result<(), String> {
         config_mtime: None,
         config_error: None,
         settings_child: None,
+        access_watch: AccessWatch::new(),
+        icon_warning: false,
     };
     event_loop.run_app(&mut app).map_err(|e| format!("event loop: {e}"))
 }
@@ -132,7 +139,7 @@ impl App {
     fn refresh_menu(&self) {
         let Some(items) = &self.items else { return };
         let status = if !self.tap_installed {
-            "Needs permission".to_string()
+            "Needs access".to_string()
         } else if let Some(e) = &self.config_error {
             format!("Config error: {}", truncate(e, 60))
         } else if items.enabled.is_checked() {
@@ -145,18 +152,39 @@ impl App {
         items.enabled.set_enabled(self.tap_installed);
     }
 
-    fn open_settings(&mut self) {
+    fn open_settings(&mut self, access_pane: bool) {
         if let Some(child) = &mut self.settings_child {
             if matches!(child.try_wait(), Ok(None)) {
                 return; // already open
             }
         }
         let spawned = std::env::current_exe().and_then(|exe| {
-            Command::new(exe).arg("settings").arg("--config").arg(&self.config_path).spawn()
+            let mut cmd = Command::new(exe);
+            cmd.arg("settings").arg("--config").arg(&self.config_path);
+            if access_pane {
+                cmd.arg("--pane").arg("access");
+            }
+            cmd.spawn()
         });
         match spawned {
             Ok(child) => self.settings_child = Some(child),
             Err(e) => eprintln!("butterscroll: could not open settings: {e}"),
+        }
+    }
+
+    /// Once per tick: icon follows Access; opens Settings on Access when the watch says so.
+    fn on_access(&mut self, has_access: bool) {
+        if self.icon_warning != !has_access {
+            if let Some(tray) = &self.tray {
+                if let Err(e) = tray.set_icon_templated(Some(tray_icon(!has_access))) {
+                    eprintln!("butterscroll: updating the menu-bar icon: {e}");
+                }
+            }
+            self.icon_warning = !has_access;
+        }
+        if self.access_watch.update(has_access) {
+            eprintln!("butterscroll: Access missing; opening Settings");
+            self.open_settings(true);
         }
     }
 
@@ -182,9 +210,9 @@ impl App {
             tap::set_enabled(items.enabled.is_checked());
         } else if id == *items.grant.id() {
             tap::request_access();
-            open(&[PRIVACY_PANE.as_ref()]);
+            open(&[access::grant_url().as_ref()]);
         } else if id == *items.settings.id() {
-            self.open_settings();
+            self.open_settings(!self.tap_installed);
         } else if id == *items.open_config.id() {
             self.open_config_file();
         } else if id == *items.reload.id() {
@@ -222,7 +250,7 @@ impl App {
         if let Err(e) = built {
             eprintln!("butterscroll: building the menu: {e}");
         }
-        let icon = Icon::from_rgba(mouse_icon_rgba(ICON_PX), ICON_PX, ICON_PX).expect("icon size matches buffer");
+        let icon = tray_icon(false);
         match TrayIconBuilder::new()
             .with_menu(Box::new(menu))
             .with_icon_templated(icon)
@@ -244,9 +272,10 @@ impl ApplicationHandler<UserEvent> for App {
             self.try_install_tap();
             if !self.tap_installed {
                 tap::request_access(); // prompts once if missing
-                eprintln!("butterscroll: waiting for permission (menu → Grant Access…)");
+                eprintln!("butterscroll: waiting for Access (menu → Grant Access…)");
             }
             self.refresh_menu();
+            self.on_access(self.tap_installed);
         }
     }
 
@@ -264,7 +293,7 @@ impl ApplicationHandler<UserEvent> for App {
                         self.refresh_menu();
                     }
                 } else if !tap::is_alive() {
-                    eprintln!("butterscroll: event tap stopped working; waiting for permission (menu → Grant Access…)");
+                    eprintln!("butterscroll: event tap stopped working; waiting for Access (menu → Grant Access…)");
                     tap::uninstall();
                     self.tap_installed = false;
                     self.refresh_menu();
@@ -272,6 +301,7 @@ impl ApplicationHandler<UserEvent> for App {
                     self.reload();
                     self.refresh_menu();
                 }
+                self.on_access(self.tap_installed);
             }
         }
     }
@@ -295,9 +325,10 @@ fn truncate(s: &str, max: usize) -> String {
 /// 18 pt at 2x.
 const ICON_PX: u32 = 36;
 
-/// Template image of a mouse: outlined capsule body with a button divider.
+/// Template image of a mouse: outlined capsule body with a button divider;
+/// with `warning`, crossed by a top-right to bottom-left slash.
 /// Only alpha matters; macOS tints template images for light/dark menu bars.
-fn mouse_icon_rgba(size: u32) -> Vec<u8> {
+fn mouse_icon_rgba(size: u32, warning: bool) -> Vec<u8> {
     let s = size as f32;
     let (cx, cy) = (s / 2.0, s / 2.0);
     let (half_w, half_h, radius) = (s * 0.28, s * 0.44, s * 0.28);
@@ -318,7 +349,15 @@ fn mouse_icon_rgba(size: u32) -> Vec<u8> {
             let inside = dist < 0.0;
             let line_y = -half_h * 0.15;
             let bar = if inside { 1.0 - ((py - line_y).abs() - stroke / 2.0).clamp(0.0, 1.0) } else { 0.0 };
-            let a = outline.max(divider * inside as u8 as f32).max(bar);
+            let mut a = outline.max(divider * inside as u8 as f32).max(bar);
+            if warning {
+                // Distance to the line px + py = 0 (top-right to bottom-left, y down).
+                let d = (px + py).abs() / std::f32::consts::SQRT_2;
+                let slash = 1.0 - (d - stroke / 2.0).clamp(0.0, 1.0);
+                // Clear gap of 1.5 strokes either side of the slash.
+                let gap = (d - stroke / 2.0 - stroke * 1.5).clamp(0.0, 1.0);
+                a = (a * gap).max(slash);
+            }
             let i = ((y * size + x) * 4) as usize;
             rgba[i + 3] = (a * 255.0).round() as u8;
         }

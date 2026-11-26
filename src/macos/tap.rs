@@ -62,7 +62,7 @@ pub fn request_access() {
     }
 }
 
-/// Creates the event tap; null while macOS denies it. Whether the tap can be
+/// Creates the event tap; null while macOS denies it or leaves it disabled. Whether the tap can be
 /// created is the only reliable permission test: `AXIsProcessTrusted` ignores
 /// the System & App Protection Override grant of macOS 27.3.
 fn create_port() -> CFMachPortRef {
@@ -70,14 +70,20 @@ fn create_port() -> CFMachPortRef {
         .into_iter()
         .fold(0, |m, t| m | event_mask_bit(t));
     unsafe {
-        CGEventTapCreate(
+        let port = CGEventTapCreate(
             kCGSessionEventTap,
             kCGHeadInsertEventTap,
             kCGEventTapOptionDefault,
             mask,
             tap_callback,
             ptr::null_mut(),
-        )
+        );
+        if !port.is_null() && !CGEventTapIsEnabled(port) {
+            CFMachPortInvalidate(port);
+            CFRelease(port);
+            return ptr::null_mut();
+        }
+        port
     }
 }
 
